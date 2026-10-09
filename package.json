@@ -34,6 +34,7 @@
     "wrangler": "^4.0.0"
   },
   "dependencies": {
+    "@lucide/vue": "^1.54.0",
     "chart.js": "^4.4.0",
     "cloudflare-smtp": "^0.1.2",
     "leaflet": "^1.9.4",

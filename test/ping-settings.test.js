@@ -7,10 +7,38 @@ import { buildAgentConfig, serializeAgentConfig } from '../src/utils/agentConfig
 import { clearSiteSettingsCache, loadSiteSettings } from '../src/utils/settings.js';
 import { getPingCatalog, normalizePingCatalog, savePingSettings } from '../src/handlers/pingNodes.js';
 import { handleAdminAPI } from '../src/handlers/admin.js';
+import { catalogEndpoint, groupPingCatalog } from '../src/frontend/utils/pingCatalog.js';
 
 const serverId = '00000000-0000-4000-8000-000000000001';
 const nodes = Object.fromEntries(PING_SLOTS.map(slot => [slot.field, slot.key === 'ct' ? 'example.com:80' : '']));
 const names = Object.fromEntries(PING_SLOTS.map(slot => [slot.key, slot.label]));
+
+test('province IP family switches preserve ports and leave city and other hostnames unchanged', () => {
+  const node = { level: 'province', endpoint: 'he-ct-v4.ip.zstaticcdn.com:80' };
+  assert.equal(catalogEndpoint(node, 'ipv6'), 'he-ct-v6.ip.zstaticcdn.com:80');
+  assert.equal(catalogEndpoint(node, 'dual'), 'he-ct-dualstack.ip.zstaticcdn.com:80');
+  assert.equal(catalogEndpoint(node, 'ipv4'), node.endpoint);
+  assert.equal(catalogEndpoint({ ...node, level: 'city' }, 'ipv6'), node.endpoint);
+  assert.equal(catalogEndpoint({ ...node, endpoint: 'custom-v4.example.com:443' }, 'ipv6'), 'custom-v4.example.com:443');
+  assert.equal(catalogEndpoint(node, 'invalid'), node.endpoint);
+});
+
+test('catalog groups carriers by region, searches switched addresses, and separates same-named cities', () => {
+  const catalog = normalizePingCatalog({ ProvinceNodes: [{ province: '河北', carriers: {
+    mobile: 'he-cm-v4.ip.zstaticcdn.com:80', telecom: 'he-ct-v4.ip.zstaticcdn.com:80', unicom: 'he-cu-v4.ip.zstaticcdn.com:80'
+  } }], CityNodes: [
+    { province: '河北', city: '同名市', carrier: 'mobile', endpoint: 'he-city-v4.ip.zstaticcdn.com:443' },
+    { province: '山西', city: '同名市', carrier: 'unicom', endpoint: 'sx-city-v4.ip.zstaticcdn.com:443' }
+  ] }).nodes;
+  const groups = groupPingCatalog(catalog);
+  assert.equal(groups.length, 1);
+  assert.deepEqual(groups[0].nodes.map(node => node.carrier), ['telecom', 'unicom', 'mobile']);
+  assert.equal(groupPingCatalog(catalog, { family: 'ipv6', query: 'he-ct-v6' })[0].nodes[0].endpoint, 'he-ct-v6.ip.zstaticcdn.com:80');
+  assert.equal(groupPingCatalog(catalog, { query: ' 河北 ' })[0].nodes.length, 3);
+  assert.equal(groupPingCatalog(catalog, { query: 'missing' }).length, 0);
+  assert.equal(groupPingCatalog(catalog, { level: 'city' }).length, 2);
+  assert.equal(groupPingCatalog(catalog, { level: 'city', family: 'dual', province: '山西' })[0].nodes[0].endpoint, 'sx-city-v4.ip.zstaticcdn.com:443');
+});
 
 test('catalog normalizes province and city nodes, preserves ports and tolerates invalid entries', () => {
   const catalog = normalizePingCatalog({ UpdatedAt: '2026-09-15T12:27:24Z', ProvinceNodes: [

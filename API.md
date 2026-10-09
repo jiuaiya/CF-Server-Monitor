@@ -1502,7 +1502,7 @@ Header：`X-Turnstile-Token: <token>`（当 `site_options.turnstile_enabled` 或
 
 通过 `POST /admin/api` 调用，需要管理员 JWT。请求为 `{"action":"get_ping_nodes","refresh":false}`；`refresh:true` 手动刷新。服务端请求 Zstatic 的 `DescribeAllNodes` 接口，缓存 5 分钟，刷新失败时优先返回缓存并设置 `stale:true`。
 
-成功响应含 `nodes` 数组、`updated_at`（源更新时间）、`fetched_at`（获取时间戳）和 `stale`。每个节点包含 `name`、`province`、`city`、`carrier`（`telecom` / `unicom` / `mobile`）、`endpoint` 和 `level`（`province` / `city`）。地址保留源端口；这些端口用于 TCP 探测，不保证目标支持 ICMP。
+成功响应含 `nodes` 数组、`updated_at`（源更新时间）、`fetched_at`（获取时间戳）和 `stale`。每个节点包含 `name`、`province`、`city`、`carrier`（`telecom` / `unicom` / `mobile`）、`endpoint` 和 `level`（`province` / `city`）。地址保留源端口；前端按地区分组，省级节点参照 Zstatic 目录规则把 `-v4.ip.zstaticcdn.com` 切换为 `-v6.ip.zstaticcdn.com` 或 `-dualstack.ip.zstaticcdn.com`，市级地址保持原样。这些端口用于 TCP 探测，不保证目标支持 ICMP。
 
 ### 3.6.5 `action: save_ping_settings` - 保存 Ping 配置
 
