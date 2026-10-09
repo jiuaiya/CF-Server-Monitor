@@ -560,6 +560,7 @@ CORS_ALLOWED_ORIGINS=https://status.example.com,https://admin.example.com
 | `frontend_ws_timeout_minutes` | number | 前端实时订阅连接超时分钟数，范围 `0`-`1440`；默认 `0` 表示不超时 |
 | `long_history_points` | number      | 长历史查询返回的采样点数，后台可选 `60`、`120`、`180`、`240` |
 | `latency_window` | object      | `/api/servers` 的 `servers[].ping` / `servers[].loss` 窗口参数；`points` 为最多真实点数，`hours` 为回看小时数 |
+| `builtin_theme` | string | 内置首页主题：`sao`（默认）或 `classic`；显式配置的第三方 `theme_url` 优先 |
 | `ping_display_order` | string[] | 全局 Ping 展示顺序，稳定槽位键为 `ct`、`cu`、`cm`、`bd`、`node_1` 至 `node_4` |
 | `ping_display_count` | number | 首页默认显示的节点数量，范围 `1`–`8`，默认 `3` |
 
@@ -1503,6 +1504,8 @@ Header：`X-Turnstile-Token: <token>`（当 `site_options.turnstile_enabled` 或
 通过 `POST /admin/api` 调用，需要管理员 JWT。请求为 `{"action":"get_ping_nodes","refresh":false}`；`refresh:true` 手动刷新。服务端请求 Zstatic 的 `DescribeAllNodes` 接口，缓存 5 分钟，刷新失败时优先返回缓存并设置 `stale:true`。
 
 成功响应含 `nodes` 数组、`updated_at`（源更新时间）、`fetched_at`（获取时间戳）和 `stale`。每个节点包含 `name`、`province`、`city`、`carrier`（`telecom` / `unicom` / `mobile`）、`endpoint` 和 `level`（`province` / `city`）。地址保留源端口；前端按地区分组，省级节点参照 Zstatic 目录规则把 `-v4.ip.zstaticcdn.com` 切换为 `-v6.ip.zstaticcdn.com` 或 `-dualstack.ip.zstaticcdn.com`，市级地址保持原样。这些端口用于 TCP 探测，不保证目标支持 ICMP。
+
+`action: save_settings` 可保存 `{"settings":{"builtin_theme":"sao","theme_url":""}}` 来启用内置 SAO；`classic` 启用原首页。配置保存在已有 `site_options` JSON 中，无需数据库迁移。
 
 ### 3.6.5 `action: save_ping_settings` - 保存 Ping 配置
 

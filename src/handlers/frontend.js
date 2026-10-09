@@ -1,4 +1,5 @@
 import { loadSettings } from '../utils/settings.js';
+import { normalizeBuiltinTheme } from '../utils/builtinTheme.js';
 import {
   DEFAULT_SITE_TITLE,
   THEME_ASSET_CACHE_TTL_SECONDS,
@@ -28,7 +29,7 @@ async function loadFrontendFiles(env) {
 
     if (env.ASSETS) {
       try {
-        const mainFiles = ['dashboard.html', 'style.css'];
+        const mainFiles = ['dashboard.html', 'sao.html', 'style.css'];
         for (const filename of mainFiles) {
           try {
             const res = await env.ASSETS.fetch(new Request(`http://static/${filename}`));
@@ -505,7 +506,8 @@ export async function serveFrontend(request, env, settings = null) {
   }
 
   const files = await loadFrontendFiles(env);
-  const html = files['dashboard.html'];
+  const builtinTheme = normalizeBuiltinTheme(settings.builtin_theme);
+  const html = files[shouldUseBuiltinFrontend(path) || builtinTheme === 'classic' ? 'dashboard.html' : 'sao.html'];
 
   if (html) {
     return buildHtmlResponse(html, settings, request, env);

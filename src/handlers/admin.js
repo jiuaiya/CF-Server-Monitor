@@ -1,3 +1,4 @@
+import { BUILTIN_THEMES } from '../utils/builtinTheme.js';
 import { buildAuthCookie, buildClearAuthCookie, checkAuth, simpleAuthResponse, validateCredentials, generateToken } from '../middleware/auth.js';
 import { getLatestMetricsForAllServers } from '../database/schema.js';
 import { getAllServers, clearServersListCache } from '../utils/cache.js';
@@ -773,6 +774,7 @@ export async function handleAdminAPI(request, env, sys, loadFullSettings = null,
       if (!String(sys?.password || '').trim() && !String(settings.password || '')) {
         return createBadRequestResponse('passwordRequired');
       }
+      if (settings.builtin_theme !== undefined && !BUILTIN_THEMES.includes(settings.builtin_theme)) return createBadRequestResponse('invalidBuiltinTheme');
       const normalizedThemeUrl = normalizeThemeUrl(settings.theme_url);
       if (normalizedThemeUrl === null) {
         return createBadRequestResponse('invalidThemeUrl');

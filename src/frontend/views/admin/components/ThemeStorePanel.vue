@@ -66,6 +66,16 @@
       </div>
 
       <div class="theme-grid">
+        <div v-for="theme in builtinThemes" :key="theme.id" class="theme-card" :class="{ active: !currentThemeUrl && currentBuiltinTheme === theme.id }">
+          <div class="theme-cover-wrap"><img :src="theme.cover" :alt="theme.title" class="theme-cover" /></div>
+          <div class="theme-info">
+            <div class="theme-header"><h3 class="theme-title">{{ theme.title }}</h3></div>
+            <div class="theme-tags"><span class="theme-tag">{{ currentLang === 'zh' ? '内置' : 'Built-in' }}</span><span v-if="theme.id === 'sao'" class="theme-tag">{{ currentLang === 'zh' ? '默认' : 'Default' }}</span></div>
+            <p class="theme-desc">{{ theme.description }}</p>
+            <div class="theme-space"></div>
+            <div class="theme-actions"><button class="btn btn-sm btn-primary" :disabled="!!applyingThemeId || (!currentThemeUrl && currentBuiltinTheme === theme.id)" @click="saveThemeUrl('', '__builtin_' + theme.id, theme.id)">{{ !currentThemeUrl && currentBuiltinTheme === theme.id ? (currentLang === 'zh' ? '已启用' : 'Active') : trans.enable }}</button><a v-if="theme.id === 'sao'" href="https://github.com/WAOR/CFSM-SAO" target="_blank" rel="noopener noreferrer" class="btn btn-sm">{{ trans.view }}</a></div>
+          </div>
+        </div>
         <div class="theme-card" :class="{ active: isMikusThemeActive }">
           <div class="theme-cover-wrap theme-cover-wrap-mikus">
             <img src="/mikus/loli.gif" alt="Mikus" class="theme-cover theme-cover-mikus" />
@@ -182,7 +192,7 @@ const props = defineProps({
   settings: { type: Object, default: () => ({}) }
 })
 
-const emit = defineEmits(['theme-applied', 'theme-options-applied', 'alert-message'])
+const emit = defineEmits(['theme-applied', 'builtin-theme-applied', 'theme-options-applied', 'alert-message'])
 
 const THEME_STORE_URL = 'https://raw.githubusercontent.com/huilang-me/CFSM-Theme-Store/refs/heads/main/themes.json'
 const THEME_STORE_FETCH_TIMEOUT_MS = 8000
@@ -213,15 +223,20 @@ const parseThemeOptionsJson = () => {
   }
 }
 
-const isMikusThemeActive = computed(() => isMikusThemeEnabled(parseThemeOptionsJson()))
-const currentThemeLabel = computed(() => isMikusThemeActive.value ? 'Mikus' : (props.currentThemeUrl || props.trans.builtinTheme))
+const currentBuiltinTheme = computed(() => props.settings.builtin_theme === 'classic' ? 'classic' : 'sao')
+const builtinThemes = computed(() => [
+  { id: 'sao', title: 'SAO', cover: '/themes/sao-preview.png', description: currentLang.value === 'zh' ? '内置默认首页。随项目构建，Ping 节点数量、排序和名称跟随后台设置。' : 'Default bundled dashboard. Ping count, priority and names follow admin settings.' },
+  { id: 'classic', title: currentLang.value === 'zh' ? '经典主题' : 'Classic', cover: '/files/logo.svg', description: currentLang.value === 'zh' ? '原有终端风格首页，支持横条、圆环和列表视图。' : 'Original terminal dashboard with bar, ring and table views.' }
+])
+const isMikusThemeActive = computed(() => !props.currentThemeUrl && currentBuiltinTheme.value === 'classic' && isMikusThemeEnabled(parseThemeOptionsJson()))
+const currentThemeLabel = computed(() => props.currentThemeUrl || (isMikusThemeActive.value ? 'Mikus' : currentBuiltinTheme.value === 'classic' ? (currentLang.value === 'zh' ? '经典主题' : 'Classic') : 'SAO'))
 const mikusThemeTags = computed(() => currentLang.value === 'zh'
   ? ['内置', 'Mikus', '樱花']
   : ['Built-in', 'Mikus', 'Sakura']
 )
 const mikusThemeDescription = computed(() => currentLang.value === 'zh'
-  ? '内置 Mikus 模式，启用后切回默认主题，并开启 Mikus 配色、加载页与樱花动效。'
-  : 'Built-in Mikus mode. Switches back to the default theme and enables Mikus colors, loading screens, and sakura effects.'
+  ? '内置 Mikus 模式，启用后切回经典主题，并开启 Mikus 配色、加载页与樱花动效。'
+  : 'Built-in Mikus mode. Switches back to the classic theme and enables Mikus colors, loading screens, and sakura effects.'
 )
 
 // Derive the appearance payload from the shared APPEARANCE_FIELDS constant so it
@@ -612,7 +627,7 @@ const previewCustomTheme = async () => {
   await previewThemeUrl(themeUrl, '__custom__')
 }
 
-const saveThemeUrl = async (themeUrl, applyingId) => {
+const saveThemeUrl = async (themeUrl, applyingId, builtinTheme = null) => {
   if (applyingThemeId.value) return
 
   applyingThemeId.value = applyingId
@@ -624,7 +639,8 @@ const saveThemeUrl = async (themeUrl, applyingId) => {
       action: 'save_settings',
       settings: {
         ...buildAppearanceSettings(themeOptions),
-        theme_url: themeUrl
+        theme_url: themeUrl,
+        ...(builtinTheme ? { builtin_theme: builtinTheme } : {})
       }
     }, props.selectedApiIndex)
 
@@ -634,6 +650,7 @@ const saveThemeUrl = async (themeUrl, applyingId) => {
     }
 
     emit('theme-applied', themeUrl)
+    if (builtinTheme) emit('builtin-theme-applied', builtinTheme)
     emit('theme-options-applied', themeOptions)
     showThemeMessage(props.trans.themeApplied)
   } catch (e) {
@@ -659,7 +676,8 @@ const saveMikusTheme = async (enabled, applyingId) => {
       action: 'save_settings',
       settings: {
         ...buildAppearanceSettings(themeOptions),
-        theme_url: ''
+        theme_url: '',
+        builtin_theme: 'classic'
       }
     }, props.selectedApiIndex)
 
@@ -669,6 +687,7 @@ const saveMikusTheme = async (enabled, applyingId) => {
     }
 
     emit('theme-applied', '')
+    emit('builtin-theme-applied', 'classic')
     emit('theme-options-applied', themeOptions)
     showThemeMessage(props.trans.themeApplied)
   } catch (e) {
@@ -707,7 +726,7 @@ const applyCustomTheme = async () => {
 }
 
 const clearTheme = async () => {
-  await saveThemeUrl('', '__builtin__')
+  await saveThemeUrl('', '__builtin__', 'sao')
 }
 
 const getThemeDescription = (theme) => {
