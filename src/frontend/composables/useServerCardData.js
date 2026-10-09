@@ -4,6 +4,7 @@ import { getPublicAssetUrl } from '../utils/config'
 import { currentLang, useTranslation } from '../utils/i18n'
 import { LATENCY_WINDOW, PING } from '../utils/constants'
 import { formatBillingPrice } from '../utils/server.js'
+import { PING_SLOTS, getServerPingDisplay } from '../utils/pingNode.js'
 
 export const DEFAULT_SERVER_CARD_CONFIG = {
   show_price: true,
@@ -17,11 +18,7 @@ export const DEFAULT_SERVER_CARD_CONFIG = {
   display_mode: 'bar'
 }
 
-const THREE_NET_DEFS = [
-  { key: 'ct', pingField: 'ping_ct', lossField: 'loss_ct', labelKey: 'pingCt', fallbackLabel: 'CT' },
-  { key: 'cu', pingField: 'ping_cu', lossField: 'loss_cu', labelKey: 'pingCu', fallbackLabel: 'CU' },
-  { key: 'cm', pingField: 'ping_cm', lossField: 'loss_cm', labelKey: 'pingCm', fallbackLabel: 'CM' }
-]
+const THREE_NET_DEFS = PING_SLOTS.map(slot => ({ ...slot, pingField: `ping_${slot.key}`, lossField: `loss_${slot.key}` }))
 
 const DEFAULT_THREE_NET_POINT_COUNT = LATENCY_WINDOW.POINTS
 
@@ -90,6 +87,10 @@ export const getUsageColor = (percent) => {
 
 export function useServerCardData(props) {
   const trans = useTranslation()
+  const pingDisplay = computed(() => getServerPingDisplay(props.server, props.sysConfig))
+  const orderedPingDefs = computed(() => pingDisplay.value.order
+    .filter(key => pingDisplay.value.enabled.includes(key))
+    .map(key => THREE_NET_DEFS.find(def => def.key === key)))
 
   const currentTime = computed(() => {
     const ts = Number(props.server.current_timestamp)
@@ -269,11 +270,11 @@ export function useServerCardData(props) {
 
   const isPingValid = (ping) => {
     if (isPingDisabled(ping)) return false
-    if (ping === null || ping === undefined || ping === '' || ping === '0') {
+    if (ping === null || ping === undefined || ping === '') {
       return false
     }
-    const val = parseInt(ping)
-    return val > 0
+    const val = Number(ping)
+    return Number.isFinite(val) && val >= 0
   }
 
   const isPingDisabled = (ping) => ping === false || ping === 'false'
@@ -296,7 +297,7 @@ export function useServerCardData(props) {
     return 'var(--accent-red)'
   }
 
-  const formatPingValue = (value) => isPingValid(value) ? `${Math.round(Number(value))}ms` : trans.value.timeout
+  const formatPingValue = (value) => value === undefined || value === '' ? '--' : isPingValid(value) ? `${Math.round(Number(value))}ms` : trans.value.timeout
   const formatLossValue = (value) => formatPercentValue(normalizeProbeMetricValue(value))
   const noSampleText = computed(() => currentLang.value === 'zh' ? '无样本' : 'No samples')
 
@@ -340,11 +341,12 @@ export function useServerCardData(props) {
   }
 
   const getLatestSeriesValue = (series, fallback) => {
+    if (fallback !== undefined) return fallback === false || fallback === 'false' ? undefined : normalizeProbeMetricValue(fallback)
     for (let index = series.length - 1; index >= 0; index -= 1) {
       if (series[index].value !== null && series[index].value !== false) return series[index].value
     }
     const value = normalizeProbeMetricValue(fallback)
-    return value === false ? null : value
+    return value === false || value === null ? undefined : value
   }
 
   const getAverageSeriesValue = (series, fallback) => {
@@ -369,10 +371,9 @@ export function useServerCardData(props) {
     return Math.max(pingCount, lossCount, getLatencyWindowConfigPointCount())
   }
 
-  const threeNetDetails = computed(() => THREE_NET_DEFS
+  const threeNetDetails = computed(() => orderedPingDefs.value
     .map(def => {
-      const customName = props.sysConfig?.[`custom_${def.key}_name`]
-      const label = String(customName || trans.value[def.labelKey] || def.fallbackLabel)
+      const label = pingDisplay.value.names[def.key]
       const pingSeries = getLatencySeries('ping', def.key)
       const lossSeries = getLatencySeries('loss', def.key)
       const pointCount = Math.max(pingSeries.length, lossSeries.length, getLatencyWindowPointCount())
@@ -418,16 +419,10 @@ export function useServerCardData(props) {
 
   const hasThreeNetDetails = computed(() => threeNetDetails.value.length > 0)
 
-  const pingList = computed(() => [
-    { label: 'CT', value: props.server.ping_ct },
-    { label: 'CU', value: props.server.ping_cu },
-    { label: 'CM', value: props.server.ping_cm },
-    { label: 'BGP', value: props.server.ping_bd },
-    { label: props.server.node_1_name || 'Node 1', value: props.server.ping_node_1 },
-    { label: props.server.node_2_name || 'Node 2', value: props.server.ping_node_2 },
-    { label: props.server.node_3_name || 'Node 3', value: props.server.ping_node_3 },
-    { label: props.server.node_4_name || 'Node 4', value: props.server.ping_node_4 }
-  ].filter(ping => !isPingDisabled(ping.value)))
+  const pingList = computed(() => orderedPingDefs.value.map(def => ({
+    key: def.key, label: pingDisplay.value.names[def.key], value: props.server[def.pingField]
+  })).filter(ping => !isPingDisabled(ping.value)))
+  const pingDisplayCount = computed(() => pingDisplay.value.count)
 
   const hasPingData = computed(() => pingList.value.length > 0)
 
@@ -483,6 +478,7 @@ export function useServerCardData(props) {
     pingList,
     hasPingData,
     threeNetDetails,
+    pingDisplayCount,
     hasThreeNetDetails,
     getPublicAssetUrl,
     formatBytes

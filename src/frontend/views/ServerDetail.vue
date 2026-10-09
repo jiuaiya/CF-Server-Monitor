@@ -412,6 +412,7 @@ import { CHART, HISTORY } from '../utils/constants'
 import { formatDateTime, normalizeTimestamp as normalizeMetricTimestamp } from '../utils/time.js'
 import useTheme from '../composables/useTheme'
 import { isDisabledProbeMetric } from '../utils/server.js'
+import { getServerPingDisplay } from '../utils/pingNode.js'
 import { resolvePlaybackCursor } from '../utils/playback.js'
 import { applyMikusThemeOptions } from '../utils/themeOptions.js'
 
@@ -502,7 +503,10 @@ const PING_FIELD_DEFS = [
   { field: 'ping_node_3', lossField: 'loss_node_3', labelKey: 'node3', className: 'ping-node-3', datasetIndex: 6 },
   { field: 'ping_node_4', lossField: 'loss_node_4', labelKey: 'node4', className: 'ping-node-4', datasetIndex: 7 }
 ]
-const pingLabel = (key) => String(appConfig?.[key.startsWith('node_') ? `${key}_name` : `custom_${key}_name`] || trans.value[`ping${key.toUpperCase().charAt(0)}${key.slice(1)}`] || key.toUpperCase())
+const pingDisplay = computed(() => getServerPingDisplay(server.value, { ...appConfig, ...config.value }))
+const orderedPingFields = computed(() => pingDisplay.value.order.map(key => PING_FIELD_DEFS.find(item => item.field === `ping_${key}`)).filter(Boolean))
+const pingLabel = (key) => pingDisplay.value.names[key] || key
+
 
 const DISK_IO_FIELDS = ['read_bps', 'write_bps', 'read_iops', 'write_iops', 'await_ms', 'util']
 const EMPTY_DISK_IO = Object.freeze(Object.fromEntries(DISK_IO_FIELDS.map(field => [field, 0])))
@@ -771,9 +775,9 @@ const avgLossRefs = {
   loss_node_4: avgLossNode4
 }
 
-const visiblePingFields = computed(() => PING_FIELD_DEFS.filter(item => {
+const visiblePingFields = computed(() => orderedPingFields.value.filter(item => {
   const value = server.value[item.field]
-  return value !== undefined && !isDisabledProbeMetric(value)
+  return pingDisplay.value.enabled.includes(item.field.replace('ping_', '')) && value !== undefined && !isDisabledProbeMetric(value)
 }))
 const hasPingData = computed(() => visiblePingFields.value.length > 0)
 const visiblePingStats = computed(() => visiblePingFields.value.map(item => ({
@@ -781,7 +785,8 @@ const visiblePingStats = computed(() => visiblePingFields.value.map(item => ({
   label: pingLabel(item.field.replace('ping_', '')),
   value: avgPingRefs[item.field].value
 })))
-const visibleLossFields = computed(() => PING_FIELD_DEFS.filter(item => (
+const visibleLossFields = computed(() => orderedPingFields.value.filter(item => (
+  pingDisplay.value.enabled.includes(item.field.replace('ping_', '')) &&
   server.value[item.field] !== undefined &&
   !isDisabledProbeMetric(server.value[item.field]) &&
   (lossHistoryFields.value[item.lossField] || isLossValid(server.value[item.lossField]))
@@ -986,11 +991,15 @@ const syncProbeChartVisibility = () => {
     for (const item of PING_FIELD_DEFS) {
       const dataset = chart.data.datasets[item.datasetIndex]
       if (!dataset) continue
+      const key = item.field.replace('ping_', '')
+      dataset.label = pingLabel(key)
+      dataset.order = pingDisplay.value.order.indexOf(key)
       const value = server.value[item.field]
-      const disabled = isDisabledProbeMetric(value)
+      const disabled = !pingDisplay.value.enabled.includes(key) || isDisabledProbeMetric(value)
       // 与 WSS 保持一致：字段不存在(undefined)或为 false 时不显示；
       // null 表示超时，仍需保留在图表中，不能当作“无数据”隐藏。
       const noReport = value === undefined
+      const wasUnavailable = dataset.disabledProbe || dataset.noDataProbe
       dataset.disabledProbe = disabled
       dataset.noDataProbe = noReport
       // Only force hide if disabled by config; otherwise preserve user's legend toggle
@@ -998,6 +1007,11 @@ const syncProbeChartVisibility = () => {
         dataset.hidden = true
         if (typeof chart.setDatasetVisibility === 'function') {
           chart.setDatasetVisibility(item.datasetIndex, false)
+        }
+      } else if (wasUnavailable) {
+        dataset.hidden = false
+        if (typeof chart.setDatasetVisibility === 'function') {
+          chart.setDatasetVisibility(item.datasetIndex, true)
         }
       }
     }

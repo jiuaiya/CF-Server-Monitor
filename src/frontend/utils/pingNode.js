@@ -3,7 +3,16 @@ const IPV4_PATTERN = /^(?:\d{1,3}\.){3}\d{1,3}$/
 const IPV4_LIKE_PATTERN = /^(?:\d+\.){3}\d+$/
 const IPV6_PATTERN = /^(?:(?:[0-9a-f]{1,4}:){1,7}[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,7}:|(?:[0-9a-f]{1,4}:){1,6}:[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,5}(?::[0-9a-f]{1,4}){1,2}|(?:[0-9a-f]{1,4}:){1,4}(?::[0-9a-f]{1,4}){1,3}|(?:[0-9a-f]{1,4}:){1,3}(?::[0-9a-f]{1,4}){1,4}|(?:[0-9a-f]{1,4}:){1,2}(?::[0-9a-f]{1,4}){1,5}|[0-9a-f]{1,4}:(?:(?::[0-9a-f]{1,4}){1,6})|:(?:(?::[0-9a-f]{1,4}){1,7}|:))$/i
 
-export const PING_NODE_FIELDS = ['custom_ct', 'custom_cu', 'custom_cm', 'custom_bd', 'node_1', 'node_2', 'node_3', 'node_4']
+import { PING_SLOTS, normalizePingOrder, normalizePingCount } from '../../utils/pingSettings.js'
+export { PING_SLOTS, normalizePingOrder, normalizePingCount }
+export const PING_NODE_FIELDS = PING_SLOTS.map(slot => slot.field)
+
+export const getServerPingDisplay = (server, config = {}) => ({
+  order: normalizePingOrder(server.ping_display?.order ?? config.ping_display_order),
+  count: normalizePingCount(server.ping_display?.count, normalizePingCount(config.ping_display_count)),
+  names: Object.fromEntries(PING_SLOTS.map(slot => [slot.key, server.ping_display?.names?.[slot.key] || config[slot.nameField] || server[slot.nameField] || slot.label])),
+  enabled: server.ping_display?.enabled ?? PING_SLOTS.filter(slot => server[`ping_${slot.key}`] !== false && server[`ping_${slot.key}`] !== 'false' && server[`ping_${slot.key}`] !== undefined).map(slot => slot.key)
+})
 
 const isValidIpv4 = (host) => {
   if (!IPV4_PATTERN.test(host)) return false

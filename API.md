@@ -560,6 +560,8 @@ CORS_ALLOWED_ORIGINS=https://status.example.com,https://admin.example.com
 | `frontend_ws_timeout_minutes` | number | 前端实时订阅连接超时分钟数，范围 `0`-`1440`；默认 `0` 表示不超时 |
 | `long_history_points` | number      | 长历史查询返回的采样点数，后台可选 `60`、`120`、`180`、`240` |
 | `latency_window` | object      | `/api/servers` 的 `servers[].ping` / `servers[].loss` 窗口参数；`points` 为最多真实点数，`hours` 为回看小时数 |
+| `ping_display_order` | string[] | 全局 Ping 展示顺序，稳定槽位键为 `ct`、`cu`、`cm`、`bd`、`node_1` 至 `node_4` |
+| `ping_display_count` | number | 首页默认显示的节点数量，范围 `1`–`8`，默认 `3` |
 
 > ~~`X-Turnstile-Token` 携带且验证成功时，响应头会同步设置 `X-Turnstile-Verified`。~~ **2026-07-26 修订**：当前前端从响应体的 `turnstile_verified` 保存凭证；响应 Header 尚未实际写入。
 
@@ -675,6 +677,21 @@ CORS_ALLOWED_ORIGINS=https://status.example.com,https://admin.example.com
 ***
 
 ### 2.3 `GET /api/server` - 获取单台服务器详情
+
+`/api/servers` 中每台服务器以及 `/api/server` 响应均新增 `ping_display`，返回该机器已经解析继承关系后的展示设置：
+
+```json
+{
+  "ping_display": {
+    "order": ["node_1", "ct", "cu", "cm", "bd", "node_2", "node_3", "node_4"],
+    "count": 3,
+    "names": { "ct": "广东电信", "cu": "广东联通", "cm": "广东移动", "bd": "BGP", "node_1": "上海电信", "node_2": "Node 2", "node_3": "Node 3", "node_4": "Node 4" },
+    "enabled": ["ct", "cu", "cm", "node_1"]
+  }
+}
+```
+
+主题应按 `order` 排序，再按 `enabled` 筛选；首页截取前 `count` 个，其余可展开。`names` 为该机器的最终名称。槽位键仍对应原有 `ping_*`、`loss_*` 指标及历史字段，排序不会交换指标。超时应保留原展示位置。
 
 **Request**
 
@@ -1478,6 +1495,45 @@ Header：`X-Turnstile-Token: <token>`（当 `site_options.turnstile_enabled` 或
   "message": "updateSuccess"
 }
 ```
+
+***
+
+### 3.6.4 `action: get_ping_nodes` - 获取 Ping 节点库
+
+通过 `POST /admin/api` 调用，需要管理员 JWT。请求为 `{"action":"get_ping_nodes","refresh":false}`；`refresh:true` 手动刷新。服务端请求 Zstatic 的 `DescribeAllNodes` 接口，缓存 5 分钟，刷新失败时优先返回缓存并设置 `stale:true`。
+
+成功响应含 `nodes` 数组、`updated_at`（源更新时间）、`fetched_at`（获取时间戳）和 `stale`。每个节点包含 `name`、`province`、`city`、`carrier`（`telecom` / `unicom` / `mobile`）、`endpoint` 和 `level`（`province` / `city`）。地址保留源端口；这些端口用于 TCP 探测，不保证目标支持 ICMP。
+
+### 3.6.5 `action: save_ping_settings` - 保存 Ping 配置
+
+通过 `POST /admin/api` 调用，需要管理员 JWT。
+
+```json
+{
+  "action": "save_ping_settings",
+  "server_id": null,
+  "nodes": {
+    "custom_ct": "gd-ct-v4.ip.zstaticcdn.com:80",
+    "custom_cu": "gd-cu-v4.ip.zstaticcdn.com:80",
+    "custom_cm": "gd-cm-v4.ip.zstaticcdn.com:80",
+    "custom_bd": "",
+    "node_1": "sh-ct-v4.ip.zstaticcdn.com:80",
+    "node_2": "",
+    "node_3": "",
+    "node_4": ""
+  },
+  "names": { "ct": "广东电信", "cu": "广东联通", "cm": "广东移动", "node_1": "上海电信" },
+  "order": ["node_1", "ct", "cu", "cm", "bd", "node_2", "node_3", "node_4"],
+  "count": 3
+}
+```
+
+- `server_id` 留空或为 `null` 保存全局默认；指定服务器 UUID 仅保存该机器的 Ping 配置。
+- `nodes` 必须包含全部 8 个固定槽位。全局空字符串表示禁用；机器配置中的 `null` 或空字符串表示跟随默认，`"0"` 表示显式禁用。
+- `names` 按稳定槽位键指定名称，每个名称最多 60 字符；机器名称留空表示使用默认名称。
+- `order` 为不重复的合法槽位键数组，未包含的键按原始顺序补在末尾。机器配置可传 `null` 跟随默认。
+- `count` 为 `1`–`8` 的整数；机器配置可传 `null` 跟随默认。
+- 返回 `{"success":true,"message":"updateSuccess"}`。机器节点和展示设置原子保存；展示设置存于 `site_options`，不改变 Agent schema 或历史表结构。
 
 ***
 

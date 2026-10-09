@@ -168,60 +168,10 @@
 
       <div class="form-row">
         <div class="form-group flex-1">
-          <label class="form-label">
-            {{ settings.custom_ct_name || trans.customCt }}
-            <HelpTooltip :text="trans.pingNodeTip" />
-          </label>
-          <input type="text" name="edit_custom_ct" autocomplete="off" v-model.trim="editForm.custom_ct" :class="['form-input', { 'input-invalid': pingNodeErrors.custom_ct }]" :placeholder="settings.custom_ct || 'gd-ct-dualstack.ip.zstaticcdn.com'">
-          <p v-if="pingNodeErrors.custom_ct" class="text-red text-sm mt-1">{{ pingNodeErrors.custom_ct }}</p>
-        </div>
-        <div class="form-group flex-1">
-          <label class="form-label">
-            {{ settings.custom_cu_name || trans.customCu }}
-            <HelpTooltip :text="trans.pingNodeTip" />
-          </label>
-          <input type="text" name="edit_custom_cu" autocomplete="off" v-model.trim="editForm.custom_cu" :class="['form-input', { 'input-invalid': pingNodeErrors.custom_cu }]" :placeholder="settings.custom_cu || 'gd-cu-dualstack.ip.zstaticcdn.com'">
-          <p v-if="pingNodeErrors.custom_cu" class="text-red text-sm mt-1">{{ pingNodeErrors.custom_cu }}</p>
+          <button type="button" class="btn" @click="$emit('open-ping-nodes')">{{ trans.pingNodes }} →</button>
         </div>
       </div>
-      <div class="form-row">
-        <div class="form-group flex-1">
-          <label class="form-label">
-            {{ settings.custom_cm_name || trans.customCm }}
-            <HelpTooltip :text="trans.pingNodeTip" />
-          </label>
-          <input type="text" name="edit_custom_cm" autocomplete="off" v-model.trim="editForm.custom_cm" :class="['form-input', { 'input-invalid': pingNodeErrors.custom_cm }]" :placeholder="settings.custom_cm || 'gd-cm-dualstack.ip.zstaticcdn.com'">
-          <p v-if="pingNodeErrors.custom_cm" class="text-red text-sm mt-1">{{ pingNodeErrors.custom_cm }}</p>
-        </div>
-        <div class="form-group flex-1">
-          <label class="form-label">
-            {{ settings.custom_bd_name || trans.customBd }}
-            <HelpTooltip :text="trans.pingNodeTip" />
-          </label>
-          <input type="text" name="edit_custom_bd" autocomplete="off" v-model.trim="editForm.custom_bd" :class="['form-input', { 'input-invalid': pingNodeErrors.custom_bd }]" :placeholder="settings.custom_bd || 'ip.zstaticcdn.com'">
-          <p v-if="pingNodeErrors.custom_bd" class="text-red text-sm mt-1">{{ pingNodeErrors.custom_bd }}</p>
-        </div>
-      </div>
-      <div class="form-row">
-        <div v-for="(field, index) in ['node_1', 'node_2']" :key="field" class="form-group flex-1">
-          <label class="form-label">
-            {{ settings[`${field}_name`] || `Node ${index + 1}` }}
-            <HelpTooltip :text="trans.pingNodeTip" />
-          </label>
-          <input type="text" :name="`edit_${field}`" autocomplete="off" v-model.trim="editForm[field]" :class="['form-input', { 'input-invalid': pingNodeErrors[field] }]" :placeholder="settings[field] || 'host[:port] / [IPv6]:port'">
-          <p v-if="pingNodeErrors[field]" class="text-red text-sm mt-1">{{ pingNodeErrors[field] }}</p>
-        </div>
-      </div>
-      <div class="form-row">
-        <div v-for="(field, index) in ['node_3', 'node_4']" :key="field" class="form-group flex-1">
-          <label class="form-label">
-            {{ settings[`${field}_name`] || `Node ${index + 3}` }}
-            <HelpTooltip :text="trans.pingNodeTip" />
-          </label>
-          <input type="text" :name="`edit_${field}`" autocomplete="off" v-model.trim="editForm[field]" :class="['form-input', { 'input-invalid': pingNodeErrors[field] }]" :placeholder="settings[field] || 'host[:port] / [IPv6]:port'">
-          <p v-if="pingNodeErrors[field]" class="text-red text-sm mt-1">{{ pingNodeErrors[field] }}</p>
-        </div>
-      </div>
+
       <div class="form-row">
         <div class="form-group flex-1">
           <div class="checkbox-item no-margin">
@@ -260,7 +210,7 @@
         </div>
       </div>
       <div class="modal-footer flex-justify-between">
-        <button @click="$emit('save')" class="btn btn-primary" :disabled="hasPingNodeErrors">{{ trans.save }}</button>
+        <button @click="$emit('save')" class="btn btn-primary">{{ trans.save }}</button>
         <button @click="$emit('close')" class="btn">{{ trans.cancel }}</button>
       </div>
     </div>
@@ -270,7 +220,6 @@
 <script setup>
 import { computed, watch } from 'vue'
 import HelpTooltip from '../../../components/HelpTooltip.vue'
-import { PING_NODE_FIELDS, validatePingNode } from '../../../utils/pingNode.js'
 import { currentLang } from '../../../utils/i18n.js'
 import { BILLING_CYCLES, CURRENCY_OPTIONS, normalizePrice, renewExpireDateIfNeeded } from '../../../utils/server.js'
 
@@ -282,19 +231,6 @@ const props = defineProps({
   currentServerName: { type: String, default: '' },
   settings: { type: Object, required: true }
 })
-
-const pingNodeErrorMessage = computed(() => (
-  props.trans.invalidPingNodeFormat || 'Use domain, IPv4, or host:port. Port must be 1-65535.'
-))
-
-const pingNodeErrors = computed(() => Object.fromEntries(
-  PING_NODE_FIELDS.map(field => [
-    field,
-    validatePingNode(editForm.value[field]).valid ? '' : pingNodeErrorMessage.value
-  ])
-))
-
-const hasPingNodeErrors = computed(() => Object.values(pingNodeErrors.value).some(Boolean))
 
 const billingCycleOptions = BILLING_CYCLES
 const currencyOptions = CURRENCY_OPTIONS
@@ -370,7 +306,7 @@ watch(
   { immediate: true }
 )
 
-const emit = defineEmits(['save', 'close', 'toggle-auto-update'])
+const emit = defineEmits(['save', 'close', 'open-ping-nodes', 'toggle-auto-update'])
 
 const handleAutoUpdateChange = (event) => {
   const nextValue = event.target.checked

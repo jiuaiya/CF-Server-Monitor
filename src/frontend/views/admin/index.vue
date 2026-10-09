@@ -87,6 +87,7 @@
             :class="{ active: activeTab === 'settings' }"
             @click="activeTab = 'settings'"
           >{{ trans.settings }}</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'pingNodes' }" @click="activeTab = 'pingNodes'">{{ trans.pingNodes }}</button>
           <button
             class="tab-btn"
             :class="{ active: activeTab === 'database' }"
@@ -148,12 +149,24 @@
           @toggle-password="togglePassword"
           @toggle-admin-password-change="toggleAdminPasswordChange"
           @save-settings="saveSettings"
+          @open-ping-nodes="pingServerId = ''; activeTab = 'pingNodes'"
           @upload-bg="uploadBg"
           @upload-bg-mobile="uploadBgMobile"
           @upload-favicon="uploadFavicon"
           @send-test-notification="sendTestNotification"
           @query-d1-usage="queryD1Usage"
           @alert-message="alertMessage = $event"
+        />
+
+        <PingNodesPanel
+          :key="selectedApiIndex"
+          :settings="settings"
+          :servers="servers"
+          :active-tab="activeTab"
+          :request="adminApiForSite"
+          :target-id="pingServerId"
+          @saved="handlePingSettingsSaved"
+          @scope-change="pingServerId = $event"
         />
 
         <DatabasePanel
@@ -189,6 +202,7 @@
         :settings="settings"
         @save="saveEdit"
         @close="closeEditModal"
+        @open-ping-nodes="openServerPingSettings"
         @toggle-auto-update="handleAutoUpdateToggle"
       />
 
@@ -580,6 +594,7 @@ import AdminLogin from './components/AdminLogin.vue'
 import ServerTable from './components/ServerTable.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import DatabasePanel from './components/DatabasePanel.vue'
+import PingNodesPanel from './components/PingNodesPanel.vue'
 import ThemeStorePanel from './components/ThemeStorePanel.vue'
 import DonationPanel from './components/DonationPanel.vue'
 import EditServerModal from './components/EditServerModal.vue'
@@ -909,6 +924,7 @@ const loginError = ref('')
 const loginLoading = ref(false)
 const adminSiteLoading = ref(false)
 const activeTab = ref('servers')
+const pingServerId = ref('')
 const servers = ref([])
 const selectedServers = ref([])
 const stats = ref({ total: '-', online: 0, offline: 0, avg_cpu: 0 })
@@ -918,6 +934,9 @@ const newServerName = ref('')
 const newServerGroup = ref('')
 
 const settings = ref({
+  ping_display_order: null,
+  ping_display_count: 3,
+  ping_server_overrides: {},
   site_title: '',
   custom_bg: '',
   custom_bg_mobile: '',
@@ -1359,6 +1378,9 @@ const loadSettings = async () => {
       const data = result.data
       const settingsData = data.settings || {}
       settings.value = {
+        ping_display_order: settingsData.ping_display_order,
+        ping_display_count: settingsData.ping_display_count,
+        ping_server_overrides: settingsData.ping_server_overrides || {},
         site_title: settingsData.site_title || '',
         custom_bg: settingsData.custom_bg || '',
         custom_bg_mobile: settingsData.custom_bg_mobile || '',
@@ -1524,12 +1546,6 @@ const saveSettings = async () => {
     }
   }
 
-  const pingNodeValidation = getPingNodeValidation(settings.value)
-  if (!pingNodeValidation.valid) {
-    validationError.value = buildPingNodeError(pingNodeValidation.field)
-    return
-  }
-
   const themeOptionsResult = parseThemeOptions(settings.value.theme_options)
   if (!themeOptionsResult.valid) {
     validationError.value = trans.value.invalidThemeOptionsFormat
@@ -1597,16 +1613,6 @@ const saveSettings = async () => {
       cloudflare_account_id: settings.value.cloudflare_account_id,
       cloudflare_token: settings.value.cloudflare_token,
       username: settings.value.username,
-      custom_ct: pingNodeValidation.values.custom_ct,
-      custom_cu: pingNodeValidation.values.custom_cu,
-      custom_cm: pingNodeValidation.values.custom_cm,
-      custom_bd: pingNodeValidation.values.custom_bd,
-      node_1: pingNodeValidation.values.node_1, node_2: pingNodeValidation.values.node_2, node_3: pingNodeValidation.values.node_3, node_4: pingNodeValidation.values.node_4,
-      custom_ct_name: settings.value.custom_ct_name.trim(),
-      custom_cu_name: settings.value.custom_cu_name.trim(),
-      custom_cm_name: settings.value.custom_cm_name.trim(),
-      custom_bd_name: settings.value.custom_bd_name.trim(),
-      node_1_name: settings.value.node_1_name.trim(), node_2_name: settings.value.node_2_name.trim(), node_3_name: settings.value.node_3_name.trim(), node_4_name: settings.value.node_4_name.trim(),
       csp_static: settings.value.csp_static || '',
       csp_api: settings.value.csp_api || ''
     }
@@ -1654,6 +1660,16 @@ const loadServers = async () => {
   } catch (e) {
     console.error('[ERROR] Load servers failed:', e)
   }
+}
+
+const openServerPingSettings = () => {
+  pingServerId.value = editForm.value.id
+  closeEditModal()
+  activeTab.value = 'pingNodes'
+}
+
+const handlePingSettingsSaved = async () => {
+  await Promise.all([loadSettings(), loadServers()])
 }
 
 const refreshServers = async () => {

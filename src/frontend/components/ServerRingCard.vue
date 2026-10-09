@@ -119,6 +119,7 @@
         :three-net-details="threeNetDetails"
         :has-ping-data="hasPingData"
         :ping-list="pingList"
+      :display-count="pingDisplayCount"
         :timeout-text="trans.timeout"
         :get-ping-color="getPingColor"
         :get-loss-color="getLossColor"
@@ -186,6 +187,7 @@ const {
   pingList,
   hasPingData,
   threeNetDetails,
+  pingDisplayCount,
   hasThreeNetDetails,
   getPublicAssetUrl,
   tagList,

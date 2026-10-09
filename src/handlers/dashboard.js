@@ -3,6 +3,7 @@ import { getDashboardLatencyHistory, getLatestMetrics, getLatestMetricsForAllSer
 import { getAllServers, getServerDetail } from '../utils/cache.js';
 import { mergeMetricsIntoServer, coerceNumericMetricFields } from '../utils/metrics.js';
 import { normalizeLongHistoryPoints } from '../utils/settings.js';
+import { resolvePingDisplay } from '../utils/pingSettings.js';
 import { createSuccessResponse, createBadRequestResponse, createNotFoundResponse } from '../utils/errors.js';
 import {
   cacheLatestReportUpdate,
@@ -199,6 +200,7 @@ export async function handleServerAPI(request, env, sys) {
     getRealtimeStateForServers(env, [id])
   ]);
   mergeMetricsIntoServer(server, latestMetrics);
+  server.ping_display = resolvePingDisplay(server, sys);
   server.latestReportUpdates = realtimeState.latestReportUpdates;
   server.sysConfig = {
     long_history_points: Number(normalizeLongHistoryPoints(sys.long_history_points))
@@ -234,6 +236,7 @@ export async function handleServersAPI(request, env, sys) {
   const regionStats = {};
   
   for (const server of results) {
+    server.ping_display = resolvePingDisplay(server, sys);
     const latestMetrics = latestMetricsMap.get(server.id);
     
     let isOnline = false;
