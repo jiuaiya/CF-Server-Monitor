@@ -136,7 +136,7 @@ export function PingChart({
   const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
   const [connectNulls, setConnectNulls] = useState(false);
   const [cutPeak, setCutPeak] = useState(false);
-  const [showLoss, setShowLoss] = useState(true);
+  const [showLoss, setShowLoss] = useState(false);
   const [cursorLeft, setCursorLeft] = useState<number | null>(null);
   const chartRef = useRef<uPlot.AlignedData>([[]]);
   // tooltip 的 buildRows 只拿得到点位下标，丢包值走 ref 与图表数据同步。
