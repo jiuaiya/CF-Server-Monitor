@@ -53,7 +53,9 @@ export interface TopPingNetwork {
   key: PingKey
   name: string
   latency: string
+  loss: string
   toneClass: string
+  lossToneClass: string
   tooltip: string
 }
 
@@ -78,7 +80,7 @@ function segmentPingHistory(points: PingHistoryPoint[]) {
 }
 
 /** Each target uses its own measurements; a summary average never fills a missing target. */
-export function buildTargetPingBars(history: PingHistoryPoint[], key: PingKey, name: string): NodePingBar[] {
+export function buildTargetPingBars(history: PingHistoryPoint[], key: PingKey, name: string, metric: NodePingMetric = 'latency'): NodePingBar[] {
   const bars = segmentPingHistory(history).map((segment, index) => {
     const samples = segment.points.flatMap(point => point.targets?.[key] ? [point.targets[key]] : [])
     const latencies = samples.flatMap(sample => sample.latency !== null ? [sample.latency] : [])
@@ -86,15 +88,19 @@ export function buildTargetPingBars(history: PingHistoryPoint[], key: PingKey, n
     const latency = latencies.length ? latencies.reduce((sum, value) => sum + value, 0) / latencies.length : null
     const loss = losses.length ? losses.reduce((sum, value) => sum + value, 0) / losses.length : null
     const timedOut = loss !== null && loss >= 100
-    const text = timedOut ? '超时' : latency !== null ? `${Math.round(latency)} ms` : 'N/A'
+    const text = metric === 'loss'
+      ? loss !== null ? `丢包 ${loss.toFixed(1)}%` : '丢包 N/A'
+      : timedOut ? '超时' : latency !== null ? `${Math.round(latency)} ms` : 'N/A'
     return {
-      key: `${key}-${segment.time}-${index}`,
-      className: timedOut ? 'bg-rose-500/80' : latency !== null ? getLatencyToneClass(latency) : 'bg-muted-foreground/15',
-      tooltip: `${name}\n${formatDateTime(segment.time, 'HH:mm:ss')}\n${text}${loss !== null ? ` · 丢包 ${loss.toFixed(1)}%` : ''}`,
+      key: `${key}-${metric}-${segment.time}-${index}`,
+      className: metric === 'loss'
+        ? loss !== null ? getLossToneClass(loss) : 'bg-muted-foreground/15'
+        : timedOut ? 'bg-rose-500/80' : latency !== null ? getLatencyToneClass(latency) : 'bg-muted-foreground/15',
+      tooltip: `${name}\n${formatDateTime(segment.time, 'HH:mm:ss')}\n${text}${metric === 'latency' && loss !== null ? ` · 丢包 ${loss.toFixed(1)}%` : ''}`,
     }
   })
   const empty = Array.from({ length: NODE_PING_BAR_COUNT - bars.length }, (_, index) => ({
-    key: `${key}-empty-${index}`,
+    key: `${key}-${metric}-empty-${index}`,
     className: 'bg-muted-foreground/10',
     tooltip: `${name}\n暂无历史数据`,
   }))
@@ -109,12 +115,17 @@ export function buildTopPingNetworks(ping?: Record<string, NodeStatusPing>, disp
     const latency = entry?.latest ?? -1
     const available = latency >= 0 && (entry?.loss ?? 100) < 100
     const text = available ? `${Math.round(latency)} ms` : '超时'
+    const loss = entry?.loss
+    const validLoss = typeof loss === 'number' && Number.isFinite(loss) && loss >= 0
+    const lossText = validLoss ? `${loss.toFixed(1)}%` : '-'
     return {
       key,
       name,
       latency: text,
+      loss: lossText,
       toneClass: getPingToneClass(latency, available),
-      tooltip: `${name}\n${text}`,
+      lossToneClass: !validLoss ? 'text-muted-foreground' : loss > 9 ? 'text-rose-500' : loss > 3 ? 'text-yellow-600' : 'text-emerald-600',
+      tooltip: `${name}\nPing ${text} · 丢包 ${lossText}`,
     }
   })
 }

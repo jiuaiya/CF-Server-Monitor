@@ -22,7 +22,7 @@ function fixture(extra: Partial<CfServer> = {}): CfServer {
     loss_bd: 8,
     ping_node_4: 0,
     loss_node_4: 0,
-    ping_display: { count: 2, order: ['node_4', 'bd', ...PING_KEYS], enabled: [...PING_KEYS] },
+    ping_display: { count: 2, order: ['node_4', 'bd', ...PING_KEYS], enabled: [...PING_KEYS], names: { node_4: '移动', bd: '电信' } },
     ...extra,
   }
 }
@@ -36,7 +36,7 @@ describe('homepage Ping summary', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('shows latency, loss and ten separated bars even when backend history is disabled', async () => {
+  it('shows each target Ping and loss without a bottom average, even when backend history is disabled', async () => {
     const { client, status } = adaptServer(fixture(), 0)
     const store = useNodesStore()
     store.configurePingHistory({ showThreeNetDetails: false })
@@ -49,12 +49,15 @@ describe('homepage Ping summary', () => {
     const app = createSSRApp({ render: () => h(NodeCard, { node: store.nodes[0]! }) })
     app.use(pinia)
     const html = await renderToString(app)
-    expect(html).toContain('aria-label="香港 延迟"')
-    expect(html).toContain('aria-label="香港 丢包"')
-    expect(html).toContain('50 ms')
-    expect(html).toContain('4.0%')
-    expect(html).toContain('data-ping-history="latency"')
-    expect(html).toContain('data-ping-history="loss"')
+    expect(html).toContain('aria-label="移动 Ping 0 ms"')
+    expect(html).toContain('aria-label="移动 丢包 0.0%"')
+    expect(html).toContain('100 ms')
+    expect(html).toContain('8.0%')
+    expect(html).not.toContain('50 ms')
+    expect(html).not.toContain('4.0%')
+    expect(html).not.toContain('data-ping-history=')
+    expect(html).toContain('data-ping-target-history="node_4"')
+    expect(html).toContain('data-ping-target-loss-history="node_4"')
   })
 
   it('uses custom slots and only displayed nodes for historical averages', () => {
@@ -125,12 +128,15 @@ describe('homepage Ping summary', () => {
     expect(mobile).toHaveLength(10)
     expect(mobile.at(-1)).toMatchObject({ className: 'bg-emerald-600/90', tooltip: expect.stringContaining('0 ms') })
     expect(telecom.at(-1)).toMatchObject({ className: 'bg-rose-500/80', tooltip: expect.stringContaining('280 ms') })
+    expect(buildTargetPingBars(history, 'bd', '电信', 'loss').at(-1)).toMatchObject({ className: 'bg-emerald-600/90', tooltip: expect.stringContaining('丢包 0.0%') })
     expect(buildTargetPingBars(history, 'cu', '联通').at(-1)?.tooltip).toContain('N/A')
     for (const component of [NodeCard, NodePingListCell]) {
       const app = createSSRApp({ render: () => h(component, { node: store.nodes[0]! }) })
       app.use(pinia)
       const html = await renderToString(app)
       expect(Array.from(html.matchAll(/data-ping-target-history="([^"]+)"/g), match => match[1])).toEqual(['node_4', 'bd'])
+      expect(Array.from(html.matchAll(/data-ping-target-loss-history="([^"]+)"/g), match => match[1])).toEqual(['node_4', 'bd'])
+      expect(html).not.toContain('data-ping-history=')
     }
   })
 
@@ -154,5 +160,7 @@ describe('homepage Ping summary', () => {
     expect(initial.status.pingWindow).toHaveLength(2)
     const bars = buildTargetPingBars(initial.status.pingWindow!, 'node_4', '移动')
     expect(bars.at(-1)).toMatchObject({ className: 'bg-rose-500/80', tooltip: expect.stringContaining('丢包 100.0%') })
+    expect(buildTargetPingBars(initial.status.pingWindow!, 'node_4', '移动', 'loss').at(-1)).toMatchObject({ className: 'bg-rose-500/80', tooltip: expect.stringContaining('丢包 100.0%') })
+    expect(buildTargetPingBars(initial.status.pingWindow!, 'node_4', '移动', 'loss').at(-2)).toMatchObject({ className: 'bg-emerald-600/90', tooltip: expect.stringContaining('丢包 0.0%') })
   })
 })

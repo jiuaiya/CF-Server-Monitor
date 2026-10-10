@@ -51,7 +51,7 @@ const columns: ColumnConfig[] = [
   { key: 'disk', label: '硬盘', width: '100px', sortable: true },
   { key: 'traffic', label: '流量', width: '100px', sortable: true },
   { key: 'rate', label: '速率', width: '80px', sortable: true },
-  { key: 'latency', label: 'Ping', width: '240px', sortable: false },
+  { key: 'latency', label: 'Ping / 丢包', width: '320px', sortable: false },
 ]
 
 const sortKey = ref<string>('')
@@ -234,14 +234,14 @@ function getRowTransitionStyle(index: number): Record<string, string> {
                 </div>
               </div>
 
-              <!-- Ping 实时延迟 -->
+              <!-- 每个节点的 Ping 和丢包 -->
               <div v-else-if="col.key === 'latency'" class="flex items-center">
                 <NodePingListCell
                   :node="node"
                   role="button"
                   tabindex="0"
                   class="outline-none"
-                  :aria-label="`${node.name} Ping 实时延迟`"
+                  :aria-label="`${node.name} Ping 和丢包`"
                   @click.stop="openPingDialog(node)"
                   @keydown.enter.stop.prevent="openPingDialog(node)"
                   @keydown.space.stop.prevent="openPingDialog(node)"

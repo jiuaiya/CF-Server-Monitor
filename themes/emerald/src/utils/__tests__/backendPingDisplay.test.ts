@@ -54,6 +54,7 @@ describe('backend Ping display in Emerald', () => {
       const html = await renderToString(app)
       const keys = Array.from(html.matchAll(/data-ping-key="([^"]+)"/g), match => match[1])
       expect(keys).toEqual(priority.slice(0, count))
+      expect(Array.from(html.matchAll(/data-ping-target-loss-history="([^"]+)"/g), match => match[1])).toEqual(priority.slice(0, count))
       expect(html).toContain('上海移动')
       expect(html).toContain('80 ms')
     }
