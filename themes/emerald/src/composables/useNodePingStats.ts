@@ -11,6 +11,8 @@ export interface NodePingStatsState {
   avgVolatility: number
   history: NodePingHistoryPoint[]
   hasData: boolean
+  hasLatencyData: boolean
+  hasLossData: boolean
 }
 
 export const NODE_PING_BAR_COUNT = 10
@@ -48,6 +50,8 @@ export function useNodePingStats(
       avgVolatility: 0,
       history: points,
       hasData: Boolean(latencyValues.length || lossValues.length),
+      hasLatencyData: Boolean(latencyValues.length),
+      hasLossData: Boolean(lossValues.length),
     }
   })
 
@@ -60,5 +64,7 @@ export function useNodePingStats(
     avgLoss: computed(() => stats.value.avgLoss),
     avgVolatility: computed(() => stats.value.avgVolatility),
     hasData: computed(() => stats.value.hasData),
+    hasLatencyData: computed(() => stats.value.hasLatencyData),
+    hasLossData: computed(() => stats.value.hasLossData),
   }
 }

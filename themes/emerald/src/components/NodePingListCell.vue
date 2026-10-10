@@ -3,18 +3,16 @@ import type { NodeData } from '@/stores/nodes'
 import NodePingResults from '@/components/NodePingResults.vue'
 import { DataTooltip } from '@/components/ui/data-tooltip'
 import { useNodePingDisplay } from '@/composables/useNodePingDisplay'
-import { useNodesStore } from '@/stores/nodes'
 
 const props = defineProps<{ node: NodeData }>()
 
-const nodesStore = useNodesStore()
-const { latencyRenderBars, lossRenderBars } = useNodePingDisplay(props.node.uuid)
+const { summaryVisible, latencyRenderBars, lossRenderBars } = useNodePingDisplay(props.node.uuid)
 </script>
 
 <template>
   <div class="flex min-w-0 w-full flex-col">
     <NodePingResults :node="node" />
-    <template v-if="nodesStore.showThreeNetDetails">
+    <template v-if="summaryVisible">
       <div class="flex w-full flex-col gap-[1px] pr-4">
         <div class="relative items-center gap-1">
           <div

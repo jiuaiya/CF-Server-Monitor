@@ -10,7 +10,6 @@ import { ProgressThin } from '@/components/ui/progress-thin'
 import { useBackgroundSurface } from '@/composables/useBackgroundSurface'
 import { useNodePingDisplay } from '@/composables/useNodePingDisplay'
 import { useAppStore } from '@/stores/app'
-import { useNodesStore } from '@/stores/nodes'
 import { getApiAssetUrl } from '@/utils/api'
 import { formatBytesPerSecondWithConfig, formatBytesWithConfig, formatDateTime, formatUptimeWithFormat, getStatus } from '@/utils/helper'
 import { formatOfflineTime, getCustomTags, getPriceTags, getRemainingTimeTagClass, getTrafficLevel, getTrafficUsed, getTrafficUsedPercentage, hasRegion, showTrafficProgress } from '@/utils/nodeHelper'
@@ -25,7 +24,6 @@ const emit = defineEmits<{
 }>()
 
 const appStore = useAppStore()
-const nodesStore = useNodesStore()
 const { pickSurfaceClass } = useBackgroundSurface()
 
 const formatBytes = (bytes: number) => formatBytesWithConfig(bytes, appStore.byteDecimals)
@@ -50,6 +48,7 @@ const remainingTimeTagClass = computed(() => getRemainingTimeTagClass(props.node
 const customTags = computed(() => getCustomTags(props.node))
 
 const {
+  summaryVisible,
   latencyRenderBars,
   lossRenderBars,
   latencyDisplay,
@@ -245,7 +244,7 @@ function openPingDialog() {
               <span class="text-muted-foreground">Ping</span>
               <NodePingResults :node="node" />
             </div>
-            <template v-if="nodesStore.showThreeNetDetails">
+            <template v-if="summaryVisible">
               <div class="grid grid-cols-6 gap-x-3">
                 <div
                   role="button" tabindex="0"
@@ -262,7 +261,7 @@ function openPingDialog() {
                   </div>
                   <div
                     class="grid h-full items-end gap-[1px]"
-                    :style="{ gridTemplateColumns: `repeat(${latencyRenderBars.length}, minmax(0, 1fr))` }"
+                    data-ping-history="latency" :style="{ gridTemplateColumns: `repeat(${latencyRenderBars.length}, minmax(0, 1fr))` }"
                   >
                     <DataTooltip
                       v-for="bar in latencyRenderBars" :key="bar.key" placement="top"
@@ -291,7 +290,7 @@ function openPingDialog() {
                   </div>
                   <div
                     class="grid h-full items-end gap-[1px]"
-                    :style="{ gridTemplateColumns: `repeat(${lossRenderBars.length}, minmax(0, 1fr))` }"
+                    data-ping-history="loss" :style="{ gridTemplateColumns: `repeat(${lossRenderBars.length}, minmax(0, 1fr))` }"
                   >
                     <DataTooltip
                       v-for="bar in lossRenderBars" :key="bar.key" placement="top"

@@ -3,6 +3,7 @@ import type { BackendPingDisplay } from '@/utils/backendPingDisplay'
 import type { NodeStatusPing } from '@/utils/rpc'
 import { computed, toValue } from 'vue'
 import { NODE_PING_BAR_COUNT, useNodePingStats } from '@/composables/useNodePingStats'
+import { useNodesStore } from '@/stores/nodes'
 import { selectBackendPingKeys } from '@/utils/backendPingDisplay'
 import { formatDateTime } from '@/utils/helper'
 import { getPingToneClass } from '@/utils/nodeHelper'
@@ -77,6 +78,11 @@ export function useNodePingDisplay(
   uuid: MaybeRefOrGetter<string>,
   options: UseNodePingDisplayOptions = {},
 ) {
+  const nodesStore = useNodesStore()
+  const summaryVisible = computed(() => {
+    const node = nodesStore.nodesByUuid.get(toValue(uuid))
+    return Boolean(node && selectBackendPingKeys(node.pingDisplay, Object.keys(node.ping ?? {})).length)
+  })
   // Home-card samples are appended by the shared subscribe=all WebSocket.
   const pingStatsEnabled = computed(() => options.enabled === undefined || toValue(options.enabled))
 
@@ -161,11 +167,14 @@ export function useNodePingDisplay(
 
   const latencyBars = computed(() => buildPingBars('latency'))
   const lossBars = computed(() => buildPingBars('loss'))
-  const latencyRenderBars = computed(() => latencyBars.value.length ? latencyBars.value : buildEmptyPingBars('latency'))
-  const lossRenderBars = computed(() => lossBars.value.length ? lossBars.value : buildEmptyPingBars('loss'))
+  function padBars(bars: NodePingBar[], metric: NodePingMetric): NodePingBar[] {
+    return [...buildEmptyPingBars(metric).slice(0, NODE_PING_BAR_COUNT - bars.length), ...bars]
+  }
+  const latencyRenderBars = computed(() => padBars(latencyBars.value, 'latency'))
+  const lossRenderBars = computed(() => padBars(lossBars.value, 'loss'))
 
   const latencyDisplay = computed(() => {
-    if (pingStats.hasData.value)
+    if (pingStats.hasLatencyData.value)
       return `${Math.round(pingStats.avgLatency.value)} ms`
     if (pingStats.loading.value)
       return options.loadingDisplayText ?? '加载中'
@@ -173,7 +182,7 @@ export function useNodePingDisplay(
   })
 
   const lossDisplay = computed(() => {
-    if (pingStats.hasData.value)
+    if (pingStats.hasLossData.value)
       return `${pingStats.avgLoss.value.toFixed(1)}%`
     if (pingStats.loading.value)
       return options.loadingDisplayText ?? '加载中'
@@ -181,7 +190,7 @@ export function useNodePingDisplay(
   })
 
   const latencyPanelTooltip = computed(() => {
-    if (!pingStats.hasData.value) {
+    if (!pingStats.hasLatencyData.value) {
       if (pingStats.loading.value)
         return options.loadingPanelTooltipText?.latency ?? ''
       return options.emptyPanelTooltipText?.latency ?? ''
@@ -190,7 +199,7 @@ export function useNodePingDisplay(
   })
 
   const lossPanelTooltip = computed(() => {
-    if (!pingStats.hasData.value) {
+    if (!pingStats.hasLossData.value) {
       if (pingStats.loading.value)
         return options.loadingPanelTooltipText?.loss ?? ''
       return options.emptyPanelTooltipText?.loss ?? ''
@@ -203,6 +212,7 @@ export function useNodePingDisplay(
   })
 
   return {
+    summaryVisible,
     pingStats,
     pingStatsEnabled,
     latencyRenderBars,

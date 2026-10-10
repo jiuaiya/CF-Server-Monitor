@@ -119,7 +119,7 @@ class InitManager {
   private async loadNodes(): Promise<void> {
     try {
       const { clients, statuses, latestReportUpdates, sysConfig } = await fetchAllServers()
-      // 后端开关控制：关闭时忽略 ping/loss 窗口并隐藏首页卡片/列表的延迟丢包信息
+      // 后端开关控制历史窗口摄取；关闭时首页仍按实时采样展示延迟与丢包统计
       const showThreeNetDetails = sysConfig?.show_three_net_details === undefined
         ? true
         : isEnabledValue(sysConfig.show_three_net_details)

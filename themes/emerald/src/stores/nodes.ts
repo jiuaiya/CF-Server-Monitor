@@ -2,6 +2,7 @@ import type { BackendPingDisplay } from '@/utils/backendPingDisplay'
 import type { Client, NodeStatus, NodeStatusPing } from '@/utils/rpc'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { selectBackendPingKeys } from '@/utils/backendPingDisplay'
 import { parseNodeGroups } from '@/utils/groupHelper'
 
 /** 流量限制类型 */
@@ -112,7 +113,7 @@ const EARTH_SNAPSHOT_INTERVAL_MS = 60_000
 
 /** 首页 ping/loss 历史摄取配置（由后端 /api/config 与 /api/servers 下发，缺省时回退旧行为） */
 interface PingHistoryConfig {
-  /** 后端 show_three_net_details：是否显示/消费三网延迟丢包详情（false 时卡片/列表隐藏相应信息） */
+  /** 后端 show_three_net_details：是否消费历史窗口；关闭时仍用实时采样展示统计 */
   showThreeNetDetails: boolean
   /** latency_window.points：保留的桶数 */
   points: number
@@ -162,7 +163,7 @@ const useNodesStore = defineStore('nodes', () => {
     return map
   })
 
-  /** 后端 show_three_net_details：false 时卡片/列表隐藏三网延迟丢包信息 */
+  /** 后端 show_three_net_details：是否使用后端历史窗口 */
   const showThreeNetDetails = computed(() => pingHistoryConfig.value.showThreeNetDetails)
 
   // ===== 方法 =====
@@ -306,17 +307,21 @@ const useNodesStore = defineStore('nodes', () => {
 
   /**
    * 按后端配置调整 ping 历史摄取策略：showThreeNetDetails 决定是否消费窗口，points/hours 决定桶长与保留条数。
-   * 缺省字段保持默认值（兼容旧后端）。
+   * 缺省字段保留已配置的值；首次配置使用默认值以兼容旧后端。
    */
   function configurePingHistory(config: Partial<PingHistoryConfig>): void {
-    const points = Number.isFinite(config.points) && (config.points ?? 0) > 0
-      ? Math.round(config.points!)
-      : PING_HISTORY_DEFAULTS.points
-    const hours = Number.isFinite(config.hours) && (config.hours ?? 0) > 0
-      ? config.hours!
-      : PING_HISTORY_DEFAULTS.hours
+    const points = config.points === undefined
+      ? pingHistoryConfig.value.points
+      : Number.isFinite(config.points) && config.points > 0
+        ? Math.round(config.points!)
+        : PING_HISTORY_DEFAULTS.points
+    const hours = config.hours === undefined
+      ? pingHistoryConfig.value.hours
+      : Number.isFinite(config.hours) && config.hours > 0
+        ? config.hours!
+        : PING_HISTORY_DEFAULTS.hours
     pingHistoryConfig.value = {
-      showThreeNetDetails: config.showThreeNetDetails ?? PING_HISTORY_DEFAULTS.showThreeNetDetails,
+      showThreeNetDetails: config.showThreeNetDetails ?? pingHistoryConfig.value.showThreeNetDetails,
       points,
       hours,
     }
@@ -324,17 +329,19 @@ const useNodesStore = defineStore('nodes', () => {
 
   /**
    * 记录一次 ping 采样。按配置的窗口桶长对齐 status.time 后按桶 upsert：
-   * 已存在同桶点时合并（新样本有效值覆盖，无效保留旧值），否则按时间顺序插入新桶并截断到配置的桶数。
+   * 已存在同桶点时更新延迟与有效丢包值（超时覆盖旧延迟），否则插入新桶并截断到配置的桶数。
    */
   function recordPingSample(uuid: string, status: NodeStatus): void {
     const sampleTime = Date.parse(status.time)
     if (!Number.isFinite(sampleTime))
       return
 
-    const pingEntries = Object.values(status.ping ?? {})
+    const display = status.pingDisplay ?? nodesByUuid.value.get(uuid)?.pingDisplay
+    const pingEntries = selectBackendPingKeys(display, Object.keys(status.ping ?? {}))
+      .flatMap(key => status.ping?.[key] ? [status.ping[key]] : [])
     const latencyValues = pingEntries
       .map(entry => entry.latest)
-      .filter(value => Number.isFinite(value) && value > 0)
+      .filter(value => Number.isFinite(value) && value >= 0)
     const lossValues = pingEntries
       .map(entry => entry.loss)
       .filter(value => Number.isFinite(value) && value >= 0)
@@ -354,7 +361,7 @@ const useNodesStore = defineStore('nodes', () => {
     const history = pingHistoryByUuid.value[uuid] ?? []
     const point = history.find(item => item.time === bucketTime)
     if (point) {
-      const nextLatency = latency ?? point.latency
+      const nextLatency = latency
       const nextLoss = loss ?? point.loss
       if (nextLatency === point.latency && nextLoss === point.loss)
         return

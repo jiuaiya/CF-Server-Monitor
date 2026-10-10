@@ -1,7 +1,7 @@
-import type { BackendPingDisplay } from '@/utils/backendPingDisplay'
+import type { BackendPingDisplay, PingKey } from '@/utils/backendPingDisplay'
 import type { CurrencyCode } from '@/utils/financeHelper'
 import type { Client, NodeStatus, NodeStatusPing, PingRecord, PingWindowPoint, StatusRecord } from '@/utils/rpc'
-import { normalizeBackendPingDisplay } from '@/utils/backendPingDisplay'
+import { normalizeBackendPingDisplay, selectBackendPingKeys } from '@/utils/backendPingDisplay'
 import { isSupportedCurrency, normalizedCurrencyMap } from '@/utils/financeHelper'
 import { requestTurnstileToken } from '@/utils/turnstile'
 
@@ -127,17 +127,13 @@ export interface SysConfig {
   show_tf?: boolean
   show_time?: boolean
   show_long_history?: boolean
-  /** 后端开关：是否在 /api/servers 输出 ping/loss 一小时窗口；关闭时主题回退到单条 ping 数据 */
+  /** 后端开关：是否在 /api/servers 输出 ping/loss 历史窗口；关闭时首页仍展示实时采样统计 */
   show_three_net_details?: boolean
 }
 
-/** 一小时延迟窗口中的单个点（2 分钟桶；ct/cu/cm/bd 为探测节点值，false=探测禁用，null=无数据） */
-export interface LatencyWindowPoint {
+/** 延迟历史窗口中的单个点（八个探测槽位；粒度由 latency_window 定义，false=探测禁用，null=无数据） */
+export interface LatencyWindowPoint extends Partial<Record<PingKey, number | string | boolean | null>> {
   ts?: number | string
-  ct?: number | string | boolean | null
-  cu?: number | string | boolean | null
-  cm?: number | string | boolean | null
-  bd?: number | string | boolean | null
 }
 
 export interface CfServer {
@@ -1018,8 +1014,6 @@ function pingFieldPresent(server: CfServer, field: keyof CfServer): boolean {
   return isPingFieldPresent(server[field])
 }
 
-const PING_WINDOW_PROVIDER_KEYS = ['ct', 'cu', 'cm', 'bd'] as const
-
 function pingWindowNumber(value: unknown): number | null {
   if (value === false || value === null || value === undefined || value === '')
     return null
@@ -1031,11 +1025,12 @@ function buildPingWindowPoint(
   ts: number,
   pingPoint: LatencyWindowPoint | undefined,
   lossPoint: LatencyWindowPoint | undefined,
+  keys: readonly PingKey[],
 ): PingWindowPoint | null {
-  const latencyValues = PING_WINDOW_PROVIDER_KEYS
+  const latencyValues = keys
     .map(key => pingWindowNumber(pingPoint?.[key]))
-    .filter((value): value is number => value !== null && value > 0)
-  const lossValues = PING_WINDOW_PROVIDER_KEYS
+    .filter((value): value is number => value !== null && value >= 0)
+  const lossValues = keys
     .map(key => pingWindowNumber(lossPoint?.[key]))
     .filter((value): value is number => value !== null && value >= 0)
 
@@ -1054,7 +1049,7 @@ function buildPingWindowPoint(
 }
 
 /** 将 /api/servers 的 ping/loss 窗口（旧→新）按时间戳对齐聚合成延迟/丢包点 */
-function buildPingWindow(server: CfServer): PingWindowPoint[] | undefined {
+function buildPingWindow(server: CfServer, keys: readonly PingKey[]): PingWindowPoint[] | undefined {
   const ping = Array.isArray(server.ping) ? server.ping : undefined
   const loss = Array.isArray(server.loss) ? server.loss : undefined
   if (!ping?.length && !loss?.length)
@@ -1072,7 +1067,7 @@ function buildPingWindow(server: CfServer): PingWindowPoint[] | undefined {
     const ts = timestamp(point.ts, 0)
     if (ts <= 0)
       continue
-    const point2 = buildPingWindowPoint(ts, point, lossByTs.get(ts))
+    const point2 = buildPingWindowPoint(ts, point, lossByTs.get(ts), keys)
     if (point2)
       points.push(point2)
   }
@@ -1083,7 +1078,7 @@ function buildPingWindow(server: CfServer): PingWindowPoint[] | undefined {
       const ts = timestamp(point.ts, 0)
       if (ts <= 0)
         continue
-      const point2 = buildPingWindowPoint(ts, undefined, point)
+      const point2 = buildPingWindowPoint(ts, undefined, point, keys)
       if (point2)
         points.push(point2)
     }
@@ -1131,7 +1126,7 @@ export function adaptServer(server: CfServer, apiIndex: number): AdaptedServer {
     }
   }
 
-  const pingWindow = buildPingWindow(server)
+  const pingWindow = buildPingWindow(server, selectBackendPingKeys(pingDisplay, Object.keys(ping)))
 
   return {
     client: {
