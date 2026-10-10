@@ -20,18 +20,16 @@ const results = computed(() => buildTopPingNetworks(props.node.ping, props.node.
   <div class="ping-results min-w-0 w-full">
     <div v-if="results.length" class="ping-results-grid grid min-w-0 w-full gap-x-3 gap-y-2" :data-ping-count="results.length">
       <div v-for="net in results" :key="net.key" class="flex min-w-0 flex-col gap-1" :data-ping-key="net.key">
-        <DataTooltip
-          placement="top" :content="net.tooltip" class="min-w-0"
-          content-class="whitespace-pre-wrap w-max px-1.5 !leading-[1.2] text-[11px]"
-        >
-          <div class="truncate text-[11px] text-muted-foreground">
-            {{ net.name }}
-          </div>
-        </DataTooltip>
         <div class="grid min-w-0 grid-cols-2 gap-2">
           <div v-for="metric in net.metrics" :key="metric.key" class="flex min-w-0 flex-col gap-1">
             <div class="flex min-w-0 items-center justify-between gap-1 text-[11px]" :aria-label="`${net.name} ${metric.label} ${metric.text}`">
-              <span v-if="metric.key === 'loss'" class="text-muted-foreground">{{ metric.label }}</span>
+              <DataTooltip
+                v-if="metric.key === 'latency'" placement="top" :content="net.tooltip" class="min-w-0 text-muted-foreground"
+                content-class="whitespace-pre-wrap w-max px-1.5 !leading-[1.2] text-[11px]"
+              >
+                <span class="block truncate">{{ net.name }}</span>
+              </DataTooltip>
+              <span v-else class="text-muted-foreground">{{ metric.label }}</span>
               <span class="ml-auto shrink-0 tabular-nums" :class="metric.toneClass">{{ metric.text }}</span>
             </div>
             <div
