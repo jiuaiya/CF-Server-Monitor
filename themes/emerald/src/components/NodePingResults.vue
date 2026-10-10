@@ -31,8 +31,8 @@ const results = computed(() => buildTopPingNetworks(props.node.ping, props.node.
         <div class="grid min-w-0 grid-cols-2 gap-2">
           <div v-for="metric in net.metrics" :key="metric.key" class="flex min-w-0 flex-col gap-1">
             <div class="flex min-w-0 items-center justify-between gap-1 text-[11px]" :aria-label="`${net.name} ${metric.label} ${metric.text}`">
-              <span class="text-muted-foreground">{{ metric.label }}</span>
-              <span class="shrink-0 tabular-nums" :class="metric.toneClass">{{ metric.text }}</span>
+              <span v-if="metric.key === 'loss'" class="text-muted-foreground">{{ metric.label }}</span>
+              <span class="ml-auto shrink-0 tabular-nums" :class="metric.toneClass">{{ metric.text }}</span>
             </div>
             <div
               class="grid h-[5px] grid-cols-10 gap-[1px]" role="img"

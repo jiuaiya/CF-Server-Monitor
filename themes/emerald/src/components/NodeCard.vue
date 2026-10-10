@@ -236,7 +236,6 @@ function openPingDialog() {
               @keydown.enter.stop.prevent="openPingDialog"
               @keydown.space.stop.prevent="openPingDialog"
             >
-              <span class="text-muted-foreground">Ping / 丢包</span>
               <NodePingResults :node="node" />
             </div>
           </div>
