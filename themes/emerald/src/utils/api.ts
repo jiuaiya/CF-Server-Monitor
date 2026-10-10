@@ -1,7 +1,7 @@
 import type { BackendPingDisplay, PingKey } from '@/utils/backendPingDisplay'
 import type { CurrencyCode } from '@/utils/financeHelper'
 import type { Client, NodeStatus, NodeStatusPing, PingRecord, PingWindowPoint, StatusRecord } from '@/utils/rpc'
-import { normalizeBackendPingDisplay, selectBackendPingKeys } from '@/utils/backendPingDisplay'
+import { normalizeBackendPingDisplay, PING_KEYS, selectBackendPingKeys } from '@/utils/backendPingDisplay'
 import { isSupportedCurrency, normalizedCurrencyMap } from '@/utils/financeHelper'
 import { requestTurnstileToken } from '@/utils/turnstile'
 
@@ -1027,18 +1027,30 @@ function buildPingWindowPoint(
   lossPoint: LatencyWindowPoint | undefined,
   keys: readonly PingKey[],
 ): PingWindowPoint | null {
+  const targets: NonNullable<PingWindowPoint['targets']> = {}
+  for (const key of PING_KEYS) {
+    const latency = pingWindowNumber(pingPoint?.[key])
+    const loss = pingWindowNumber(lossPoint?.[key])
+    if (latency === null && loss === null)
+      continue
+    targets[key] = {
+      latency: latency !== null && latency >= 0 && (loss ?? 0) < 100 ? latency : null,
+      loss: loss !== null && loss >= 0 ? loss : null,
+    }
+  }
   const latencyValues = keys
-    .map(key => pingWindowNumber(pingPoint?.[key]))
-    .filter((value): value is number => value !== null && value >= 0)
+    .map(key => targets[key]?.latency)
+    .filter((value): value is number => value != null)
   const lossValues = keys
-    .map(key => pingWindowNumber(lossPoint?.[key]))
-    .filter((value): value is number => value !== null && value >= 0)
+    .map(key => targets[key]?.loss)
+    .filter((value): value is number => value != null)
 
-  if (!latencyValues.length && !lossValues.length)
+  if (!Object.keys(targets).length)
     return null
 
   return {
     time: new Date(ts).toISOString(),
+    targets,
     latency: latencyValues.length
       ? latencyValues.reduce((sum, value) => sum + value, 0) / latencyValues.length
       : null,
@@ -1055,6 +1067,12 @@ function buildPingWindow(server: CfServer, keys: readonly PingKey[]): PingWindow
   if (!ping?.length && !loss?.length)
     return undefined
 
+  const pingByTs = new Map<number, LatencyWindowPoint>()
+  for (const point of ping ?? []) {
+    const ts = timestamp(point.ts, 0)
+    if (ts > 0)
+      pingByTs.set(ts, point)
+  }
   const lossByTs = new Map<number, LatencyWindowPoint>()
   for (const point of loss ?? []) {
     const ts = timestamp(point.ts, 0)
@@ -1063,25 +1081,11 @@ function buildPingWindow(server: CfServer, keys: readonly PingKey[]): PingWindow
   }
 
   const points: PingWindowPoint[] = []
-  for (const point of ping ?? []) {
-    const ts = timestamp(point.ts, 0)
-    if (ts <= 0)
-      continue
-    const point2 = buildPingWindowPoint(ts, point, lossByTs.get(ts), keys)
+  const timestamps = [...new Set([...pingByTs.keys(), ...lossByTs.keys()])].sort((a, b) => a - b)
+  for (const ts of timestamps) {
+    const point2 = buildPingWindowPoint(ts, pingByTs.get(ts), lossByTs.get(ts), keys)
     if (point2)
       points.push(point2)
-  }
-
-  // 延迟窗口为空但丢包有数据时，以丢包的 ts 生成点
-  if (!points.length) {
-    for (const point of loss ?? []) {
-      const ts = timestamp(point.ts, 0)
-      if (ts <= 0)
-        continue
-      const point2 = buildPingWindowPoint(ts, undefined, point, keys)
-      if (point2)
-        points.push(point2)
-    }
   }
 
   return points.length ? points : undefined

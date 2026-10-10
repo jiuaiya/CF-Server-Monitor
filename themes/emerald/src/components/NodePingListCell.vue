@@ -10,7 +10,7 @@ const { summaryVisible, latencyRenderBars, lossRenderBars } = useNodePingDisplay
 </script>
 
 <template>
-  <div class="flex min-w-0 w-full flex-col">
+  <div class="flex min-w-0 w-full flex-col gap-2">
     <NodePingResults :node="node" />
     <template v-if="summaryVisible">
       <div class="flex w-full flex-col gap-[1px] pr-4">

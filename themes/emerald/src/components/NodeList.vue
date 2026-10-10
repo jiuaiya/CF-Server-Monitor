@@ -179,7 +179,7 @@ function getRowTransitionStyle(index: number): Record<string, string> {
         <div
           v-for="(node, index) in sortedNodes"
           :key="getRowTransitionKey(node)"
-          class="relative flex h-16 cursor-pointer flex-col justify-center rounded-lg px-2 shadow-[0_0_4px,0_0_0_1px] shadow-transparent transition-all bg-background/60 hover:bg-background hover:shadow-emerald-600/10"
+          class="relative flex min-h-16 cursor-pointer flex-col justify-center rounded-lg p-2 shadow-[0_0_4px,0_0_0_1px] shadow-transparent transition-all bg-background/60 hover:bg-background hover:shadow-emerald-600/10"
           :class="[pickSurfaceClass('', 'backdrop-blur-sm'), !node.online && '!shadow-red-600/10']"
           :style="getRowTransitionStyle(index)"
           @click="handleClick(node)"

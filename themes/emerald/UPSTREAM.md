@@ -8,6 +8,8 @@
 
 管理入口继续使用 `/admin#/admin`，兼容旧 `/#/admin` 链接。GitHub Pages 导出也默认使用 Emerald，原页面另存为 `classic.html`，运行时从 apiBase meta 读取后端地址。主题资源与 MIT 许可一起进入构建产物。
 
+每项 Ping 结果下方也显示该槽位自己的十段延迟历史条。API 适配与实时采样保留独立槽位数据；悬停或轻触色块可查看时间、延迟与丢包率，超时为红色，缺失样本为灰色，不使用汇总平均值替代单节点历史。
+
 保留上游 Vue Composition API、hash 路由和 API/store 边界。更新上游时需保留这些适配与回归测试。
 
 构建：项目根目录 `npm run build:frontend`。检查：`npm run test:emerald`、`npm run type-check --workspace cfsm-theme-emerald`、`npm run lint --workspace cfsm-theme-emerald`。

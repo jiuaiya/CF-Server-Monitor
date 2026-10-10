@@ -4,7 +4,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSSRApp, h } from 'vue'
 import NodeCard from '@/components/NodeCard.vue'
-import { useNodePingDisplay } from '@/composables/useNodePingDisplay'
+import NodePingListCell from '@/components/NodePingListCell.vue'
+import { buildTargetPingBars, useNodePingDisplay } from '@/composables/useNodePingDisplay'
 import { useNodesStore } from '@/stores/nodes'
 import { adaptServer } from '@/utils/api'
 import { PING_KEYS } from '@/utils/backendPingDisplay'
@@ -109,5 +110,49 @@ describe('homepage Ping summary', () => {
     const store = useNodesStore()
     store.initNodes({ hk: initial.client }, { hk: initial.status })
     expect(useNodePingDisplay('hk').summaryVisible.value).toBe(false)
+  })
+
+  it('renders separate target history in cards and lists using their own measurements', async () => {
+    const initial = adaptServer(fixture({
+      ping: [{ ts: start, bd: 280, node_4: 0 }, { ts: start + 120000, bd: 280, node_4: 0 }],
+      loss: [{ ts: start, bd: 0, node_4: 0 }, { ts: start + 120000, bd: 0, node_4: 0 }],
+    }), 0)
+    const store = useNodesStore()
+    store.initNodes({ hk: initial.client }, { hk: initial.status })
+    const history = store.pingHistoryByUuid.hk!
+    const mobile = buildTargetPingBars(history, 'node_4', '移动')
+    const telecom = buildTargetPingBars(history, 'bd', '电信')
+    expect(mobile).toHaveLength(10)
+    expect(mobile.at(-1)).toMatchObject({ className: 'bg-emerald-600/90', tooltip: expect.stringContaining('0 ms') })
+    expect(telecom.at(-1)).toMatchObject({ className: 'bg-rose-500/80', tooltip: expect.stringContaining('280 ms') })
+    expect(buildTargetPingBars(history, 'cu', '联通').at(-1)?.tooltip).toContain('N/A')
+    for (const component of [NodeCard, NodePingListCell]) {
+      const app = createSSRApp({ render: () => h(component, { node: store.nodes[0]! }) })
+      app.use(pinia)
+      const html = await renderToString(app)
+      expect(Array.from(html.matchAll(/data-ping-target-history="([^"]+)"/g), match => match[1])).toEqual(['node_4', 'bd'])
+    }
+  })
+
+  it('records separate live values even when the aggregate is unchanged and replaces same-bucket timeouts', () => {
+    const store = useNodesStore()
+    store.configurePingHistory({ showThreeNetDetails: false })
+    const initial = adaptServer(fixture({ ping_bd: 100, ping_node_4: 0, loss_bd: 0 }), 0)
+    store.initNodes({ hk: initial.client }, { hk: initial.status })
+    store.updateNodeStatuses({ hk: adaptServer(fixture({ last_updated: start + 1000, ping_bd: 0, ping_node_4: 100, loss_bd: 0 }), 0).status })
+    expect(useNodePingDisplay('hk').latencyDisplay.value).toBe('50 ms')
+    expect(buildTargetPingBars(store.pingHistoryByUuid.hk!, 'node_4', '移动').at(-1)?.tooltip).toContain('100 ms')
+    store.updateNodeStatuses({ hk: adaptServer(fixture({ last_updated: start + 2000, ping_node_4: null, loss_node_4: 100 }), 0).status })
+    expect(buildTargetPingBars(store.pingHistoryByUuid.hk!, 'node_4', '移动').at(-1)).toMatchObject({ className: 'bg-rose-500/80', tooltip: expect.stringContaining('超时') })
+  })
+
+  it('keeps loss-only timeout buckets alongside successful latency buckets', () => {
+    const initial = adaptServer(fixture({
+      ping: [{ ts: start, node_4: 50 }],
+      loss: [{ ts: start, node_4: 0 }, { ts: start + 120000, node_4: 100 }],
+    }), 0)
+    expect(initial.status.pingWindow).toHaveLength(2)
+    const bars = buildTargetPingBars(initial.status.pingWindow!, 'node_4', '移动')
+    expect(bars.at(-1)).toMatchObject({ className: 'bg-rose-500/80', tooltip: expect.stringContaining('丢包 100.0%') })
   })
 })

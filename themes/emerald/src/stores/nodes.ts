@@ -1,18 +1,14 @@
 import type { BackendPingDisplay } from '@/utils/backendPingDisplay'
-import type { Client, NodeStatus, NodeStatusPing } from '@/utils/rpc'
+import type { Client, NodeStatus, NodeStatusPing, PingWindowPoint } from '@/utils/rpc'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { selectBackendPingKeys } from '@/utils/backendPingDisplay'
+import { PING_KEYS, selectBackendPingKeys } from '@/utils/backendPingDisplay'
 import { parseNodeGroups } from '@/utils/groupHelper'
 
 /** 流量限制类型 */
 export type TrafficLimitType = 'up' | 'down' | 'min' | 'max' | 'sum'
 
-export interface PingHistoryPoint {
-  time: string
-  latency: number | null
-  loss: number | null
-}
+export interface PingHistoryPoint extends PingWindowPoint {}
 
 /** 节点完整信息（合并 Client 和 Status） */
 export interface NodeData {
@@ -336,15 +332,25 @@ const useNodesStore = defineStore('nodes', () => {
     if (!Number.isFinite(sampleTime))
       return
 
+    const targets: NonNullable<PingHistoryPoint['targets']> = {}
+    for (const key of PING_KEYS) {
+      const entry = status.ping?.[key]
+      if (!entry)
+        continue
+      targets[key] = {
+        latency: Number.isFinite(entry.latest) && entry.latest >= 0 && entry.loss < 100 ? entry.latest : null,
+        loss: Number.isFinite(entry.loss) && entry.loss >= 0 ? entry.loss : null,
+      }
+    }
     const display = status.pingDisplay ?? nodesByUuid.value.get(uuid)?.pingDisplay
     const pingEntries = selectBackendPingKeys(display, Object.keys(status.ping ?? {}))
-      .flatMap(key => status.ping?.[key] ? [status.ping[key]] : [])
+      .flatMap(key => targets[key] ? [targets[key]] : [])
     const latencyValues = pingEntries
-      .map(entry => entry.latest)
-      .filter(value => Number.isFinite(value) && value >= 0)
+      .map(entry => entry.latency)
+      .filter((value): value is number => value !== null)
     const lossValues = pingEntries
       .map(entry => entry.loss)
-      .filter(value => Number.isFinite(value) && value >= 0)
+      .filter((value): value is number => value !== null)
 
     if (!latencyValues.length && !lossValues.length)
       return
@@ -363,12 +369,13 @@ const useNodesStore = defineStore('nodes', () => {
     if (point) {
       const nextLatency = latency
       const nextLoss = loss ?? point.loss
-      if (nextLatency === point.latency && nextLoss === point.loss)
+      const sameTargets = PING_KEYS.every(key => targets[key]?.latency === point.targets?.[key]?.latency && targets[key]?.loss === point.targets?.[key]?.loss)
+      if (nextLatency === point.latency && nextLoss === point.loss && sameTargets)
         return
       pingHistoryByUuid.value = {
         ...pingHistoryByUuid.value,
         [uuid]: history.map(item => item === point
-          ? { time: point.time, latency: nextLatency, loss: nextLoss }
+          ? { time: point.time, latency: nextLatency, loss: nextLoss, targets }
           : item),
       }
       return
@@ -376,7 +383,7 @@ const useNodesStore = defineStore('nodes', () => {
 
     pingHistoryByUuid.value = {
       ...pingHistoryByUuid.value,
-      [uuid]: [...history, { time: bucketTime, latency, loss }]
+      [uuid]: [...history, { time: bucketTime, latency, loss, targets }]
         .sort((a, b) => Date.parse(a.time) - Date.parse(b.time))
         .slice(-pingHistoryConfig.value.points),
     }

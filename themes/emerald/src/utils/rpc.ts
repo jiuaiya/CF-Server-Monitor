@@ -1,4 +1,4 @@
-import type { BackendPingDisplay } from '@/utils/backendPingDisplay'
+import type { BackendPingDisplay, PingKey } from '@/utils/backendPingDisplay'
 import { fetchAllServers, fetchHistory, fetchPingHistory, getRegisteredDisplayUuids } from '@/utils/api'
 
 export interface Client {
@@ -52,11 +52,17 @@ export interface NodeStatusPing {
   max: number
 }
 
-/** 一小时延迟窗口中的单个 2 分钟桶（已按 ct/cu/cm/bd 聚合） */
+export interface PingTargetSample {
+  latency: number | null
+  loss: number | null
+}
+
+/** 后端窗口或实时采样桶，保留汇总与每个探测槽位的独立数据。 */
 export interface PingWindowPoint {
   time: string
   latency: number | null
   loss: number | null
+  targets?: Partial<Record<PingKey, PingTargetSample>>
 }
 
 export interface NodeStatus {
@@ -87,7 +93,7 @@ export interface NodeStatus {
   uptime: number
   pingDisplay?: BackendPingDisplay
   ping?: Record<string, NodeStatusPing>
-  /** /api/servers 返回的一小时延迟窗口（30 桶，旧→新），由适配器聚合生成 */
+  /** /api/servers 的配置历史窗口（旧→新），由适配器生成 */
   pingWindow?: PingWindowPoint[]
 }
 

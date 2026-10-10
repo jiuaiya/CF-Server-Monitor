@@ -1,5 +1,6 @@
 import type { MaybeRefOrGetter } from 'vue'
-import type { BackendPingDisplay } from '@/utils/backendPingDisplay'
+import type { PingHistoryPoint } from '@/stores/nodes'
+import type { BackendPingDisplay, PingKey } from '@/utils/backendPingDisplay'
 import type { NodeStatusPing } from '@/utils/rpc'
 import { computed, toValue } from 'vue'
 import { NODE_PING_BAR_COUNT, useNodePingStats } from '@/composables/useNodePingStats'
@@ -49,11 +50,55 @@ function getLossToneClass(loss: number): string {
 }
 
 export interface TopPingNetwork {
-  key: string
+  key: PingKey
   name: string
   latency: string
   toneClass: string
   tooltip: string
+}
+
+function segmentPingHistory(points: PingHistoryPoint[]) {
+  if (!points.length)
+    return []
+  const barCount = Math.min(NODE_PING_BAR_COUNT, points.length)
+  const firstTime = Date.parse(points[0]!.time)
+  const lastTime = Date.parse(points.at(-1)!.time)
+  const segmentSize = Math.max(1, (lastTime - firstTime) / barCount)
+  return Array.from({ length: barCount }, (_, index) => {
+    const start = firstTime + index * segmentSize
+    const end = index === barCount - 1 ? lastTime + 1 : start + segmentSize
+    return {
+      time: new Date(start).toISOString(),
+      points: points.filter((point) => {
+        const time = Date.parse(point.time)
+        return time >= start && time < end
+      }),
+    }
+  })
+}
+
+/** Each target uses its own measurements; a summary average never fills a missing target. */
+export function buildTargetPingBars(history: PingHistoryPoint[], key: PingKey, name: string): NodePingBar[] {
+  const bars = segmentPingHistory(history).map((segment, index) => {
+    const samples = segment.points.flatMap(point => point.targets?.[key] ? [point.targets[key]] : [])
+    const latencies = samples.flatMap(sample => sample.latency !== null ? [sample.latency] : [])
+    const losses = samples.flatMap(sample => sample.loss !== null ? [sample.loss] : [])
+    const latency = latencies.length ? latencies.reduce((sum, value) => sum + value, 0) / latencies.length : null
+    const loss = losses.length ? losses.reduce((sum, value) => sum + value, 0) / losses.length : null
+    const timedOut = loss !== null && loss >= 100
+    const text = timedOut ? '超时' : latency !== null ? `${Math.round(latency)} ms` : 'N/A'
+    return {
+      key: `${key}-${segment.time}-${index}`,
+      className: timedOut ? 'bg-rose-500/80' : latency !== null ? getLatencyToneClass(latency) : 'bg-muted-foreground/15',
+      tooltip: `${name}\n${formatDateTime(segment.time, 'HH:mm:ss')}\n${text}${loss !== null ? ` · 丢包 ${loss.toFixed(1)}%` : ''}`,
+    }
+  })
+  const empty = Array.from({ length: NODE_PING_BAR_COUNT - bars.length }, (_, index) => ({
+    key: `${key}-empty-${index}`,
+    className: 'bg-muted-foreground/10',
+    tooltip: `${name}\n暂无历史数据`,
+  }))
+  return [...empty, ...bars]
 }
 
 /** Card and list results share the backend's per-server priority and count. */
@@ -91,7 +136,7 @@ export function useNodePingDisplay(
   })
 
   /**
-   * 将一小时数据集按时间平均划分为 NODE_PING_BAR_COUNT 根柱子，
+   * 将配置窗口按时间平均划分为 NODE_PING_BAR_COUNT 根柱子，
    * 每根柱取段内数据点的平均值（无论段内几条数据）。
    */
   function buildPingBars(metric: NodePingMetric): NodePingBar[] {
@@ -99,19 +144,9 @@ export function useNodePingDisplay(
     if (!points.length)
       return []
 
-    const barCount = Math.min(NODE_PING_BAR_COUNT, points.length)
-    const firstTime = Date.parse(points[0]!.time)
-    const lastTime = Date.parse(points.at(-1)!.time)
-    const segmentSize = Math.max(1, (lastTime - firstTime) / barCount)
-
     const bars: NodePingBar[] = []
-    for (let index = 0; index < barCount; index++) {
-      const segmentStart = firstTime + index * segmentSize
-      const segmentEnd = index === barCount - 1 ? lastTime + 1 : segmentStart + segmentSize
-      const segmentPoints = points.filter((point) => {
-        const time = Date.parse(point.time)
-        return time >= segmentStart && time < segmentEnd
-      })
+    for (const [index, segment] of segmentPingHistory(points).entries()) {
+      const segmentPoints = segment.points
 
       const latencyValues = segmentPoints
         .map(point => point.latency)
@@ -127,7 +162,7 @@ export function useNodePingDisplay(
         : lossValues.length
           ? lossValues.reduce((sum, v) => sum + v, 0) / lossValues.length
           : null
-      const segmentTime = new Date(segmentStart).toISOString()
+      const segmentTime = segment.time
 
       bars.push({
         key: `${segmentTime}-${index}`,
