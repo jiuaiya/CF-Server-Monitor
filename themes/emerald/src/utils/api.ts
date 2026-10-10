@@ -1273,7 +1273,7 @@ export async function fetchHistory(uuid: string, hours = 1): Promise<StatusRecor
 
 export async function fetchPingHistory(uuid: string, hours = 1): Promise<{
   records: PingRecord[]
-  tasks: Array<{ id: number, key: PingTaskKey, name: string, interval: number, loss: number }>
+  tasks: Array<{ id: number, key: PingTaskKey, name: string, interval: number, loss?: number }>
 }> {
   const source = getServerSource(uuid)
   const rows = await request<HistoryRow[]>(`/api/history/all?id=${encodeURIComponent(source.serverId)}&hours=${hours}`, source.apiIndex)
@@ -1293,18 +1293,18 @@ export async function fetchPingHistory(uuid: string, hours = 1): Promise<{
         continue
 
       availableTasks.add(task.id)
-      const lossValue = hasLoss ? finiteNumber(lossRaw) : 0
+      const lossValue = hasLoss ? finiteNumber(lossRaw) : undefined
       const latency = hasLatency ? finiteNumber(latencyValue) : 0
       records.push({
         client: uuid,
         task_id: task.id,
         time,
-        value: lossValue >= 100 || latency <= 0 ? -1 : latency,
+        value: (lossValue ?? 0) >= 100 || !hasLatency || latency < 0 ? -1 : latency,
         loss: lossValue,
       })
       if (hasLoss) {
         const taskLosses = losses.get(task.id) ?? []
-        taskLosses.push(lossValue)
+        taskLosses.push(lossValue!)
         losses.set(task.id, taskLosses)
       }
     }
@@ -1317,7 +1317,9 @@ export async function fetchPingHistory(uuid: string, hours = 1): Promise<{
       key: task.key,
       name: pingTaskNames[task.key],
       interval: 60,
-      loss: (losses.get(task.id) ?? []).reduce((sum, value) => sum + value, 0) / Math.max(1, losses.get(task.id)?.length ?? 0),
+      loss: losses.get(task.id)?.length
+        ? losses.get(task.id)!.reduce((sum, value) => sum + value, 0) / losses.get(task.id)!.length
+        : undefined,
     })),
   }
 }

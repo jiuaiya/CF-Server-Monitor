@@ -12,4 +12,6 @@
 
 保留上游 Vue Composition API、hash 路由和 API/store 边界。更新上游时需保留这些适配与回归测试。
 
+详情图的丢包视图改为分行热力图，与上方延迟曲线使用同一时间范围和联动指示线。每个节点一行，色块表示该时间段最高丢包率；提示显示准确区间、最高值及多次采样的平均值。0% 为淡绿、100% 为红、无数据为灰，丢包率不插值。格子数量兼顾屏幕宽度和实际采样间隔，避免虚假空格；默认关闭丢包开关的行为保留。历史适配与实时追加均保留合法 0ms 和未知丢包状态，延迟曲线不跨越明确失败的探测。
+
 构建：项目根目录 `npm run build:frontend`。检查：`npm run test:emerald`、`npm run type-check --workspace cfsm-theme-emerald`、`npm run lint --workspace cfsm-theme-emerald`。

@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import type { CustomSeriesRenderItem, EChartsOption, GridComponentOption, SeriesOption, XAxisComponentOption, YAxisComponentOption } from 'echarts'
 import { Icon } from '@iconify/vue'
+import { useElementSize } from '@vueuse/core'
 import dayjs from 'dayjs'
+import { graphic } from 'echarts/core'
 import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 import VChart from 'vue-echarts'
 import LongHistoryLoginDialog from '@/components/LongHistoryLoginDialog.vue'
@@ -14,6 +17,7 @@ import { getGuestMaxChartTimeRangeLabel, requiresLongHistoryLogin, showLongHisto
 import { useAppStore } from '@/stores/app'
 import { useNodesStore } from '@/stores/nodes'
 import { DEFAULT_CHART_TIME_RANGE, getAvailableChartTimeRanges } from '@/utils/chartTimeRange'
+import { buildLossHeatmap, LOSS_HEATMAP_LEVELS, lossHeatmapColor } from '@/utils/pingLossHeatmap'
 import { cutPeakValues, interpolateNullsLinear } from '@/utils/recordHelper'
 import { getSharedRpc, RpcError } from '@/utils/rpc'
 import '@/utils/echarts' // 共享 ECharts 配置
@@ -163,7 +167,8 @@ const selectedTaskIds = ref<number[]>([])
 const cutPeak = ref(false)
 const showDelay = ref(true)
 const showLoss = ref(false)
-const chartMargin = { top: 30, right: 24, bottom: 52, left: 56 }
+const chartContainer = ref<HTMLElement | null>(null)
+const { width: chartWidth } = useElementSize(chartContainer)
 
 const mergeToleranceMs = computed(() => {
   const taskIntervals = tasks.value
@@ -401,10 +406,16 @@ const chartData = computed(() => {
   }
 
   if (selectedKeys.length > 0 && data.length > 0) {
+    const original = data
     data = interpolateNullsLinear(data, selectedKeys, {
       maxGapMultiplier: 6,
       minCapMs: 2 * 60_000,
       maxCapMs: 30 * 60_000,
+    })
+    // Preserve explicit failed probes; interpolation only fills absent samples.
+    data = data.map((point, index) => {
+      const failedKeys = selectedKeys.filter(key => original[index]?.[key] === null)
+      return failedKeys.length ? { ...point, ...Object.fromEntries(failedKeys.map(key => [key, null])) } : point
     })
   }
 
@@ -441,6 +452,8 @@ function getTaskColor(taskId: number): string {
 }
 
 function finiteMetric(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === '')
+    return undefined
   const number = Number(value)
   return Number.isFinite(number) ? number : undefined
 }
@@ -542,7 +555,7 @@ function appendRealtimePing(node: NonNullable<typeof nodeInfo.value>): void {
       client: node.uuid,
       task_id: taskId,
       time,
-      value: ping.latest > 0 ? ping.latest : -1,
+      value: ping.latest >= 0 && ping.loss < 100 ? ping.latest : -1,
       loss: ping.loss,
       metric: 'latency' as const,
     }]
@@ -555,50 +568,8 @@ function appendRealtimePing(node: NonNullable<typeof nodeInfo.value>): void {
   const existing = remoteData.value.filter(record => !recordKeys.has(`${record.task_id}:${record.time}`))
   remoteData.value = [...existing, ...records]
     .sort((a, b) => dayjs(a.time).valueOf() - dayjs(b.time).valueOf())
-    .slice(-500)
+    .slice(-Math.max(1, tasks.value.length) * 500)
 }
-
-const packetLossMarkers = computed(() => {
-  const data = chartData.value
-  const markers = new Map<number, number[]>()
-
-  if (!data.length || !selectedTasks.value.length)
-    return markers
-
-  const chartTimes = data.map(item => dayjs(item.time as string).valueOf())
-  const toleranceMs = mergeToleranceMs.value
-
-  for (const task of selectedTasks.value) {
-    const points = new Set<number>()
-    const taskLossRecords = remoteData.value.filter(rec =>
-      rec.task_id === task.id && ((rec.loss ?? 0) > 0 || (rec.metric !== 'loss' && rec.value < 0)),
-    )
-
-    for (const record of taskLossRecords) {
-      const lossTs = dayjs(record.time).valueOf()
-      let matchedIndex = -1
-
-      for (let i = 0; i < chartTimes.length; i++) {
-        const chartTs = chartTimes[i]
-        if (chartTs === undefined)
-          continue
-
-        if (Math.abs(chartTs - lossTs) <= toleranceMs) {
-          matchedIndex = i
-          break
-        }
-      }
-
-      if (matchedIndex >= 0) {
-        points.add(matchedIndex)
-      }
-    }
-
-    markers.set(task.id, Array.from(points).sort((a, b) => a - b))
-  }
-
-  return markers
-})
 
 // 切换任务选中状态
 function toggleTask(taskId: number) {
@@ -650,132 +621,192 @@ const baseTooltipConfig = computed(() => ({
   },
 }))
 
-const pingChartOption = computed(() => {
+const chartLeft = computed(() => showLoss.value ? 100 : 56)
+const lossHeatmap = computed(() => buildLossHeatmap(
+  remoteData.value,
+  selectedTasks.value.map(task => task.id),
+  selectedHours.value,
+  Math.max(24, Math.min(180, Math.floor(((chartWidth.value || 900) - chartLeft.value - 24) / 6))),
+))
+const delayHeight = 210
+const lossRowHeight = 28
+const lossTop = computed(() => showDelay.value ? delayHeight + 84 : 40)
+const lossHeight = computed(() => Math.max(1, selectedTasks.value.length) * lossRowHeight)
+const chartHeight = computed(() => showLoss.value
+  ? lossTop.value + lossHeight.value + 46
+  : delayHeight + 90,
+)
+
+function escapeTooltip(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll('\'', '&#39;')
+}
+
+const pingChartOption = computed<EChartsOption>(() => {
   const taskList = selectedTasks.value
   const data = chartData.value
+  const heatmap = lossHeatmap.value
   const hours = selectedHours.value
+  const grids: GridComponentOption[] = []
+  const xAxes: XAxisComponentOption[] = []
+  const yAxes: YAxisComponentOption[] = []
+  const series: SeriesOption[] = []
 
-  // 构建 series，确保颜色与卡片一致
-  const series = taskList.map((task) => {
-    const color = getTaskColor(task.id)
-    const lossMarkerIndexes = packetLossMarkers.value.get(task.id) || []
-    return {
-      name: task.name,
-      type: 'line' as const,
-      data: data.map(d => d[task.id] as number | null ?? null),
-      smooth: showDelay.value ? (cutPeak.value ? 0.6 : 0.1) : 0,
-      showSymbol: false,
-      connectNulls: false,
-      lineStyle: { width: showDelay.value ? 1.5 : 0, color, cap: 'round' as const },
-      itemStyle: { color, opacity: showDelay.value ? 1 : 0 },
-      markLine: showLoss.value && lossMarkerIndexes.length
-        ? {
-            silent: true,
-            symbol: ['none', 'none'],
-            animation: false,
-            label: { show: false },
-            lineStyle: {
-              color,
-              width: 1,
-              type: 'solid' as const,
-              opacity: 0.55,
-            },
-            data: lossMarkerIndexes.map(index => ({
-              xAxis: index,
-            })),
-          }
-        : undefined,
-    }
-  })
-
-  // 颜色映射表（用于 Tooltip）
-  const colorMap = new Map<number, string>()
-  tasks.value.forEach((task, idx) => {
-    const safeIdx = Math.max(0, idx % chartColors.length)
-    colorMap.set(task.id, chartColors[safeIdx]!)
-  })
-
-  return {
-    animation: false,
-    // 全局颜色设置（用于图例等）
-    color: tasks.value.map((_, idx) => {
-      const safeIdx = Math.max(0, idx % chartColors.length)
-      return chartColors[safeIdx]!
-    }),
-    tooltip: {
-      ...baseTooltipConfig.value,
-      formatter: (params: unknown) => {
-        const p = params as Array<{ seriesName: string, value: number | null, dataIndex: number }>
-        if (!p.length)
-          return ''
-        const firstParam = p[0]
-        if (!firstParam)
-          return ''
-        const rowData = data[firstParam.dataIndex]
-        if (!rowData)
-          return ''
-
-        const time = rowData.time as string
-        const timeStr = formatTimeForTooltip(time, hours)
-        let html = `<div style="font-weight:600;margin-bottom:6px;color:${chartThemeColors.value.textSecondary}">${timeStr}</div>`
-        html += '<div style="display:flex;flex-direction:column;gap:4px">'
-
-        // 按延迟值排序显示
-        const sortedParams = [...p].sort((a, b) => (a.value ?? 0) - (b.value ?? 0))
-
-        for (const item of sortedParams) {
-          if (item.value !== null && item.value !== undefined) {
-            // 通过任务名找到对应的任务ID，再获取颜色
-            const task = tasks.value.find(t => t.name === item.seriesName)
-            const color = task ? colorMap.get(task.id) || chartColors[0] : chartColors[0]
-            const colorDot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:8px;flex-shrink:0"></span>`
-            html += `<div style="display:flex;align-items:center">${colorDot}<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.seriesName}</span><span style="margin-left:auto;font-weight:600;margin-left:16px;font-variant-numeric:tabular-nums">${Math.round(item.value)} ms</span></div>`
-          }
-        }
-        html += '</div>'
-        return html
+  function addTimeAxis(showLabels: boolean) {
+    xAxes.push({
+      type: 'time',
+      gridIndex: grids.length - 1,
+      min: heatmap.start,
+      max: heatmap.end,
+      splitNumber: chartWidth.value < 500 ? 3 : 6,
+      axisLabel: {
+        show: showLabels,
+        hideOverlap: true,
+        fontSize: 11,
+        color: chartThemeColors.value.textSecondary,
+        formatter: value => formatTime(new Date(value).toISOString(), showDateInAxis.value),
       },
-    },
-    legend: {
-      type: 'scroll',
-      bottom: 0,
-      itemWidth: 12,
-      itemHeight: 12,
-      itemGap: 16,
-      icon: 'roundRect',
-      textStyle: { fontSize: 11, color: chartThemeColors.value.textSecondary },
-      data: taskList.map(t => t.name),
-    },
-    grid: chartMargin,
-    xAxis: {
+      axisLine: { show: showLabels, lineStyle: { color: chartThemeColors.value.borderColor } },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      axisPointer: { show: true, label: { formatter: params => formatTimeForTooltip(new Date(Number(params.value)).toISOString(), hours) } },
+    })
+  }
+
+  if (showDelay.value) {
+    grids.push({ top: 32, height: delayHeight, left: chartLeft.value, right: 24 })
+    addTimeAxis(!showLoss.value)
+    yAxes.push({
+      type: 'value',
+      gridIndex: 0,
+      name: '延迟 (ms)',
+      nameTextStyle: { color: chartThemeColors.value.textSecondary },
+      axisLabel: { fontSize: 11, color: chartThemeColors.value.textSecondary },
+      axisTick: { show: false },
+      axisLine: { show: false },
+      splitLine: { lineStyle: { color: chartThemeColors.value.splitLineColor, type: 'dashed' } },
+    })
+    for (const task of taskList) {
+      series.push({
+        id: `latency-${task.id}`,
+        name: task.name,
+        type: 'line',
+        data: data.map(point => [Date.parse(point.time as string), point[task.id] as number | null ?? null]),
+        smooth: cutPeak.value ? 0.6 : 0.1,
+        showSymbol: false,
+        connectNulls: false,
+        lineStyle: { width: 1.5, color: getTaskColor(task.id), cap: 'round' },
+        itemStyle: { color: getTaskColor(task.id) },
+      })
+    }
+  }
+
+  if (showLoss.value) {
+    const gridIndex = grids.length
+    grids.push({ top: lossTop.value, height: lossHeight.value, left: chartLeft.value, right: 24 })
+    addTimeAxis(true)
+    yAxes.push({
       type: 'category',
-      data: data.map(d => formatTime(d.time as string, showDateInAxis.value)),
+      gridIndex,
+      inverse: true,
+      data: taskList.map(task => task.name),
       axisLabel: {
         fontSize: 11,
         color: chartThemeColors.value.textSecondary,
-        margin: 12,
-      },
-      axisLine: {
-        show: true,
-        lineStyle: { color: chartThemeColors.value.borderColor, width: 1 },
+        width: 86,
+        overflow: 'truncate',
       },
       axisTick: { show: false },
-      boundaryGap: false,
-    },
-    yAxis: {
-      type: 'value',
-      name: '延迟 (ms)',
-      nameTextStyle: { color: chartThemeColors.value.textSecondary },
-      axisLabel: { fontSize: 11, color: chartThemeColors.value.textSecondary, formatter: '{value}' },
       axisLine: { show: false },
-      axisTick: { show: false },
-      splitLine: {
-        lineStyle: {
-          color: chartThemeColors.value.splitLineColor,
-          type: 'dashed' as const,
+      splitLine: { show: false },
+      axisPointer: { show: false },
+    })
+    const renderItem: CustomSeriesRenderItem = (params, api) => {
+      const cell = heatmap.cells[params.dataIndex]
+      if (!cell)
+        return
+      const from = api.coord([cell.start, cell.row])
+      const to = api.coord([cell.end, cell.row])
+      const shape = graphic.clipRectByRect({
+        x: from[0]! + 0.5,
+        y: from[1]! - 11,
+        width: Math.max(1, to[0]! - from[0]! - 1),
+        height: 22,
+      }, params.coordSys as unknown as { x: number, y: number, width: number, height: number })
+      return shape ? { type: 'rect', shape, style: { fill: lossHeatmapColor(cell.maximum, isDark.value) }, emphasis: { style: { stroke: chartThemeColors.value.textSecondary, lineWidth: 1 } } } : undefined
+    }
+    series.push({
+      id: 'loss-heatmap',
+      name: '丢包率',
+      type: 'custom',
+      xAxisIndex: gridIndex,
+      yAxisIndex: gridIndex,
+      renderItem,
+      clip: true,
+      encode: { x: [0, 1], y: 2 },
+      data: heatmap.cells.map(cell => [cell.start, cell.end, cell.row, cell.maximum ?? -1]),
+      tooltip: {
+        trigger: 'item',
+        formatter: (params) => {
+          const item = params as { dataIndex: number }
+          const cell = heatmap.cells[item.dataIndex]
+          if (!cell)
+            return ''
+          const name = escapeTooltip(taskList[cell.row]?.name ?? '')
+          const time = `${formatTimeForTooltip(new Date(cell.start).toISOString(), hours)} – ${formatTimeForTooltip(new Date(cell.end).toISOString(), hours)}`
+          if (cell.maximum === null)
+            return `${name}<br>${time}<br>暂无数据`
+          const average = cell.samples > 1 ? `<br>平均丢包 ${cell.average!.toFixed(1)}% · ${cell.samples} 次采样` : ''
+          return `${name}<br>${time}<br>最高丢包 <b>${cell.maximum.toFixed(1)}%</b>${average}`
         },
       },
+    })
+  }
+
+  return {
+    animation: false,
+    tooltip: {
+      ...baseTooltipConfig.value,
+      confine: true,
+      triggerOn: 'mousemove|click|mousewheel',
+      formatter: (params) => {
+        const items = Array.isArray(params) ? params : [params]
+        const latencyItems = items.flatMap((item) => {
+          const value = item.value
+          return Array.isArray(value) && value.length === 2 && typeof value[0] === 'number' && (value[1] === null || typeof value[1] === 'number')
+            ? [{ name: item.seriesName ?? '', time: value[0], latency: value[1] }]
+            : []
+        })
+        if (!latencyItems.length)
+          return ''
+        const time = formatTimeForTooltip(new Date(latencyItems[0]!.time).toISOString(), hours)
+        return `${time}<br>${latencyItems.map(item => `${escapeTooltip(item.name)}：${item.latency === null ? '无有效延迟' : `${Math.round(item.latency)} ms`}`).join('<br>')}`
+      },
     },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    title: showLoss.value
+      ? {
+          text: '丢包率（每格最高值）',
+          left: chartLeft.value,
+          top: lossTop.value - 26,
+          textStyle: { fontSize: 12, fontWeight: 'normal', color: chartThemeColors.value.textSecondary },
+        }
+      : undefined,
+    legend: showDelay.value && !showLoss.value
+      ? {
+          type: 'scroll',
+          selectedMode: false,
+          bottom: 0,
+          itemWidth: 12,
+          itemHeight: 12,
+          itemGap: 16,
+          icon: 'roundRect',
+          textStyle: { fontSize: 11, color: chartThemeColors.value.textSecondary },
+          data: taskList.map(task => task.name),
+        }
+      : undefined,
+    grid: grids,
+    xAxis: xAxes,
+    yAxis: yAxes,
     series,
   }
 })
@@ -979,10 +1010,22 @@ onMounted(() => {
 
         <!-- 图表 -->
         <div
-          class="h-80 rounded-md p-4 transition-all"
+          v-if="(showDelay || showLoss) && selectedTasks.length"
+          class="rounded-md p-3 transition-all"
           :class="pickSurfaceClass('bg-background/60 hover:bg-background', 'bg-background/50 hover:bg-background backdrop-blur-xl')"
         >
-          <VChart :option="pingChartOption" autoresize />
+          <div ref="chartContainer" :style="{ height: `${chartHeight}px` }" data-ping-detail-chart :data-loss-rows="showLoss ? selectedTasks.length : 0">
+            <VChart :option="pingChartOption" :update-options="{ notMerge: true }" autoresize />
+          </div>
+          <div v-if="showLoss" class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 pt-2 text-[11px] text-muted-foreground" aria-label="丢包率颜色图例">
+            <span v-for="level in LOSS_HEATMAP_LEVELS" :key="level.label" class="inline-flex items-center gap-1">
+              <span class="h-2.5 w-3 rounded-[1px]" :style="{ backgroundColor: level[isDark ? 'dark' : 'light'] }" />
+              {{ level.label }}
+            </span>
+          </div>
+        </div>
+        <div v-else class="py-8 text-center text-sm text-muted-foreground">
+          {{ selectedTasks.length ? '请选择延迟或丢包' : '请选择探测节点' }}
         </div>
       </template>
     </Spinner>
