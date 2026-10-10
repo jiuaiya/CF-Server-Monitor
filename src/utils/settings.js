@@ -1,4 +1,4 @@
-import { normalizeBuiltinTheme, isLegacySaoThemeUrl } from './builtinTheme.js';
+import { normalizeBuiltinTheme, isLegacyBuiltinThemeUrl } from './builtinTheme.js';
 import {
   DEFAULT_SITE_TITLE,
   JWT_SECRET_MIN_LENGTH,
@@ -124,7 +124,7 @@ const defaults = {
   resource_alert_rules: [],
   traffic_alert_threshold: '0',
   theme_url: '',
-  builtin_theme: 'sao',
+  builtin_theme: 'emerald',
   servers_optimized: 'false'
 };
 
@@ -655,11 +655,11 @@ export async function loadSiteSettings(db, options = {}) {
     if (!isValidJwtSecret(siteOptions?.jwt_secret) || !isValidJwtSecret(result.jwt_secret)) {
       result.jwt_secret = await ensurePersistedJwtSecret(db, result, siteOptions);
     }
-    // Existing remote SAO installations adopt the bundled, Ping-aware version.
+    // Existing remote SAO/Emerald installations adopt the bundled, Ping-aware version.
     // An explicitly selected external version after this upgrade stays external.
-    if (siteOptions?.builtin_theme === undefined && isLegacySaoThemeUrl(result.theme_url)) {
+    if ((siteOptions?.builtin_theme === undefined || siteOptions.builtin_theme === 'sao') && isLegacyBuiltinThemeUrl(result.theme_url)) {
       result.theme_url = '';
-      result.builtin_theme = 'sao';
+      result.builtin_theme = 'emerald';
     }
     result.builtin_theme = normalizeBuiltinTheme(result.builtin_theme);
     result.ping_display_order = normalizePingOrder(result.ping_display_order);

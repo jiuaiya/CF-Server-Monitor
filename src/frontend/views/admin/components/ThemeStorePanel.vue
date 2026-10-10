@@ -70,10 +70,10 @@
           <div class="theme-cover-wrap"><img :src="theme.cover" :alt="theme.title" class="theme-cover" /></div>
           <div class="theme-info">
             <div class="theme-header"><h3 class="theme-title">{{ theme.title }}</h3></div>
-            <div class="theme-tags"><span class="theme-tag">{{ currentLang === 'zh' ? '内置' : 'Built-in' }}</span><span v-if="theme.id === 'sao'" class="theme-tag">{{ currentLang === 'zh' ? '默认' : 'Default' }}</span></div>
+            <div class="theme-tags"><span class="theme-tag">{{ currentLang === 'zh' ? '内置' : 'Built-in' }}</span><span v-if="theme.id === 'emerald'" class="theme-tag">{{ currentLang === 'zh' ? '默认' : 'Default' }}</span></div>
             <p class="theme-desc">{{ theme.description }}</p>
             <div class="theme-space"></div>
-            <div class="theme-actions"><button class="btn btn-sm btn-primary" :disabled="!!applyingThemeId || (!currentThemeUrl && currentBuiltinTheme === theme.id)" @click="saveThemeUrl('', '__builtin_' + theme.id, theme.id)">{{ !currentThemeUrl && currentBuiltinTheme === theme.id ? (currentLang === 'zh' ? '已启用' : 'Active') : trans.enable }}</button><a v-if="theme.id === 'sao'" href="https://github.com/WAOR/CFSM-SAO" target="_blank" rel="noopener noreferrer" class="btn btn-sm">{{ trans.view }}</a></div>
+            <div class="theme-actions"><button class="btn btn-sm btn-primary" :disabled="!!applyingThemeId || (!currentThemeUrl && currentBuiltinTheme === theme.id)" @click="saveThemeUrl('', '__builtin_' + theme.id, theme.id)">{{ !currentThemeUrl && currentBuiltinTheme === theme.id ? (currentLang === 'zh' ? '已启用' : 'Active') : trans.enable }}</button><a v-if="theme.id === 'emerald'" href="https://github.com/Tokinx/cf-server-monitor-theme-emerald" target="_blank" rel="noopener noreferrer" class="btn btn-sm">{{ trans.view }}</a></div>
           </div>
         </div>
         <div class="theme-card" :class="{ active: isMikusThemeActive }">
@@ -223,13 +223,13 @@ const parseThemeOptionsJson = () => {
   }
 }
 
-const currentBuiltinTheme = computed(() => props.settings.builtin_theme === 'classic' ? 'classic' : 'sao')
+const currentBuiltinTheme = computed(() => props.settings.builtin_theme === 'classic' ? 'classic' : 'emerald')
 const builtinThemes = computed(() => [
-  { id: 'sao', title: 'SAO', cover: '/themes/sao-preview.png', description: currentLang.value === 'zh' ? '内置默认首页。随项目构建，Ping 节点数量、排序和名称跟随后台设置。' : 'Default bundled dashboard. Ping count, priority and names follow admin settings.' },
+  { id: 'emerald', title: 'Emerald', cover: '/themes/emerald-preview.png', description: currentLang.value === 'zh' ? '内置默认首页。随项目构建，Ping 节点数量、排序和名称跟随后台设置。' : 'Default bundled dashboard. Ping count, priority and names follow admin settings.' },
   { id: 'classic', title: currentLang.value === 'zh' ? '经典主题' : 'Classic', cover: '/files/logo.svg', description: currentLang.value === 'zh' ? '原有终端风格首页，支持横条、圆环和列表视图。' : 'Original terminal dashboard with bar, ring and table views.' }
 ])
 const isMikusThemeActive = computed(() => !props.currentThemeUrl && currentBuiltinTheme.value === 'classic' && isMikusThemeEnabled(parseThemeOptionsJson()))
-const currentThemeLabel = computed(() => props.currentThemeUrl || (isMikusThemeActive.value ? 'Mikus' : currentBuiltinTheme.value === 'classic' ? (currentLang.value === 'zh' ? '经典主题' : 'Classic') : 'SAO'))
+const currentThemeLabel = computed(() => props.currentThemeUrl || (isMikusThemeActive.value ? 'Mikus' : currentBuiltinTheme.value === 'classic' ? (currentLang.value === 'zh' ? '经典主题' : 'Classic') : 'Emerald'))
 const mikusThemeTags = computed(() => currentLang.value === 'zh'
   ? ['内置', 'Mikus', '樱花']
   : ['Built-in', 'Mikus', 'Sakura']
@@ -726,7 +726,7 @@ const applyCustomTheme = async () => {
 }
 
 const clearTheme = async () => {
-  await saveThemeUrl('', '__builtin__', 'sao')
+  await saveThemeUrl('', '__builtin__', 'emerald')
 }
 
 const getThemeDescription = (theme) => {

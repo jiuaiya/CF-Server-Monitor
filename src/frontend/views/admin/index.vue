@@ -992,7 +992,7 @@ const settings = ref({
   custom_cm_name: '移动',
   custom_bd_name: 'BGP',
   theme_url: '',
-  builtin_theme: 'sao',
+  builtin_theme: 'emerald',
   csp_static: '',
   csp_api: ''
 })
@@ -1439,7 +1439,7 @@ const loadSettings = async () => {
         custom_bd_name: settingsData.custom_bd_name || 'BGP',
         node_1_name: settingsData.node_1_name || 'Node 1', node_2_name: settingsData.node_2_name || 'Node 2', node_3_name: settingsData.node_3_name || 'Node 3', node_4_name: settingsData.node_4_name || 'Node 4',
         theme_url: settingsData.theme_url || '',
-        builtin_theme: settingsData.builtin_theme || 'sao',
+        builtin_theme: settingsData.builtin_theme || 'emerald',
         csp_static: settingsData.csp_static || '',
         csp_api: settingsData.csp_api || ''
       }

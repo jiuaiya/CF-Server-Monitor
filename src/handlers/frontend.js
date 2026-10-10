@@ -29,7 +29,7 @@ async function loadFrontendFiles(env) {
 
     if (env.ASSETS) {
       try {
-        const mainFiles = ['dashboard.html', 'sao.html', 'style.css'];
+        const mainFiles = ['dashboard.html', 'emerald.html', 'style.css'];
         for (const filename of mainFiles) {
           try {
             const res = await env.ASSETS.fetch(new Request(`http://static/${filename}`));
@@ -507,7 +507,7 @@ export async function serveFrontend(request, env, settings = null) {
 
   const files = await loadFrontendFiles(env);
   const builtinTheme = normalizeBuiltinTheme(settings.builtin_theme);
-  const html = files[shouldUseBuiltinFrontend(path) || builtinTheme === 'classic' ? 'dashboard.html' : 'sao.html'];
+  const html = files[shouldUseBuiltinFrontend(path) || builtinTheme === 'classic' ? 'dashboard.html' : 'emerald.html'];
 
   if (html) {
     return buildHtmlResponse(html, settings, request, env);

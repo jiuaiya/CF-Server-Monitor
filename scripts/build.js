@@ -33,12 +33,12 @@ if (fs.existsSync(indexHtmlPath)) {
 
 console.log('Build complete!');
 
-console.log('Building bundled SAO theme...');
-execSync('npm run build --workspace cfsm-theme-sao', {
+console.log('Building bundled Emerald theme...');
+execSync('npm run build --workspace cfsm-theme-emerald', {
   cwd: rootDir,
   stdio: 'inherit',
   env: { ...process.env, CFSM_BUNDLED_BUILD: '1' }
 });
-fs.moveSync(path.join(distDir, 'builtin/sao/index.html'), path.join(distDir, 'sao.html'), { overwrite: true });
-fs.copySync(path.join(rootDir, 'themes/sao/LICENSE'), path.join(distDir, 'builtin/sao/LICENSE.txt'));
-console.log('Bundled SAO theme ready.');
+fs.moveSync(path.join(distDir, 'builtin/emerald/index.html'), path.join(distDir, 'emerald.html'), { overwrite: true });
+fs.copySync(path.join(rootDir, 'themes/emerald/LICENSE'), path.join(distDir, 'builtin/emerald/LICENSE.txt'));
+console.log('Bundled Emerald theme ready.');

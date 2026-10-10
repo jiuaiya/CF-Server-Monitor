@@ -65,18 +65,18 @@ for (const file of htmlFiles) {
   console.log(`Injected config into ${file}`);
 }
 
-// Keep the original frontend available while SAO is the exported default.
+// Keep the original frontend available while Emerald is the exported default.
 fs.moveSync(path.join(distDir, 'index.html'), path.join(distDir, 'classic.html'), { overwrite: true });
-execSync('npm run build --workspace cfsm-theme-sao', {
+execSync('npm run build --workspace cfsm-theme-emerald', {
   cwd: rootDir,
   stdio: 'inherit',
   env: { ...process.env, CFSM_BUNDLED_BUILD: '1', CFSM_STATIC_BUILD: '1' }
 });
-let saoHtml = fs.readFileSync(path.join(distDir, 'builtin/sao/index.html'), 'utf8');
-saoHtml = saoHtml.replace(/((?:src|href)=["'])(?:\.\/|\/)?assets\//g, '$1./builtin/sao/assets/');
-saoHtml = injectTitle(injectApiBase(saoHtml, apiBase), title);
-if (backgroundImage) saoHtml = saoHtml.replace('</head>', `${buildBackgroundStyle(backgroundImage)}\n</head>`);
-fs.writeFileSync(path.join(distDir, 'index.html'), saoHtml);
-fs.removeSync(path.join(distDir, 'builtin/sao/index.html'));
-fs.copySync(path.join(rootDir, 'themes/sao/LICENSE'), path.join(distDir, 'builtin/sao/LICENSE.txt'));
+let emeraldHtml = fs.readFileSync(path.join(distDir, 'builtin/emerald/index.html'), 'utf8');
+emeraldHtml = emeraldHtml.replace(/((?:src|href)=["'])(?:\.\/|\/)?assets\//g, '$1./builtin/emerald/assets/');
+emeraldHtml = injectTitle(injectApiBase(emeraldHtml, apiBase), title);
+if (backgroundImage) emeraldHtml = emeraldHtml.replace('</head>', `${buildBackgroundStyle(backgroundImage)}\n</head>`);
+fs.writeFileSync(path.join(distDir, 'index.html'), emeraldHtml);
+fs.removeSync(path.join(distDir, 'builtin/emerald/index.html'));
+fs.copySync(path.join(rootDir, 'themes/emerald/LICENSE'), path.join(distDir, 'builtin/emerald/LICENSE.txt'));
 console.log('Build complete!');

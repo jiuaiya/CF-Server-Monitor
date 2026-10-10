@@ -324,7 +324,7 @@ export default {
           turnstile_enabled: turnstileEnabled,
           turnstile_login_enabled: turnstileEnabled || turnstileLoginEnabled,
           turnstile_site_key: sys.turnstile_site_key || '',
-          builtin_theme: sys.builtin_theme || 'sao',
+          builtin_theme: sys.builtin_theme || 'emerald',
           ping_display_order: sys.ping_display_order,
           ping_display_count: sys.ping_display_count,
           custom_ct_name: sys.custom_ct_name || '电信',
