@@ -3,7 +3,7 @@ import type { NodeData } from '@/stores/nodes'
 import type { BackendPingDisplay, PingKey } from '@/utils/backendPingDisplay'
 import type { NodeStatusPing } from '@/utils/rpc'
 import { computed, ref, toValue, watch } from 'vue'
-import { normalizeBackendPingDisplay, PING_KEYS, selectBackendPingKeys } from '@/utils/backendPingDisplay'
+import { normalizeBackendPingDisplay, PING_KEYS } from '@/utils/backendPingDisplay'
 
 export interface PingChartTask {
   id: number
@@ -22,7 +22,7 @@ export interface PingChartTask {
   type?: string
 }
 
-/** Use the same current slots as the home card, keeping historical metric ids stable. */
+/** Detail shows all enabled slots in priority order; count only limits the home card. */
 export function buildPingChartTasks(historyTasks: PingChartTask[], ping?: Record<string, NodeStatusPing>, display?: BackendPingDisplay): PingChartTask[] {
   const byKey = new Map<PingKey, PingChartTask>()
   for (const task of historyTasks) {
@@ -32,7 +32,8 @@ export function buildPingChartTasks(historyTasks: PingChartTask[], ping?: Record
   }
   const normalized = normalizeBackendPingDisplay(display)
   const available = ping === undefined ? [...byKey.keys()] : Object.keys(ping)
-  return selectBackendPingKeys(normalized, available).map((key) => {
+  const enabled = new Set(normalized.enabled ?? available)
+  return normalized.order.filter(key => enabled.has(key)).map((key) => {
     const task = byKey.get(key)
     return {
       ...task,
