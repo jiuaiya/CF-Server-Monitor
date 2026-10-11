@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import type { CustomSeriesRenderItem, EChartsOption, GridComponentOption, SeriesOption, XAxisComponentOption, YAxisComponentOption } from 'echarts'
+import type { EChartsOption, GridComponentOption, SeriesOption, XAxisComponentOption, YAxisComponentOption } from 'echarts'
 import { Icon } from '@iconify/vue'
 import { useElementSize } from '@vueuse/core'
 import dayjs from 'dayjs'
-import { graphic } from 'echarts/core'
 import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 import VChart from 'vue-echarts'
 import LongHistoryLoginDialog from '@/components/LongHistoryLoginDialog.vue'
+import PacketLossEvents from '@/components/PacketLossEvents.vue'
 import { Button } from '@/components/ui/button'
 import { DataTooltip } from '@/components/ui/data-tooltip'
 import { Empty } from '@/components/ui/empty'
@@ -17,7 +17,7 @@ import { getGuestMaxChartTimeRangeLabel, requiresLongHistoryLogin, showLongHisto
 import { useAppStore } from '@/stores/app'
 import { useNodesStore } from '@/stores/nodes'
 import { DEFAULT_CHART_TIME_RANGE, getAvailableChartTimeRanges } from '@/utils/chartTimeRange'
-import { buildLossHeatmap, LOSS_HEATMAP_LEVELS, lossHeatmapColor } from '@/utils/pingLossHeatmap'
+import { buildPacketLossEvents, getPingTimeRange } from '@/utils/pingLossEvents'
 import { cutPeakValues, interpolateNullsLinear } from '@/utils/recordHelper'
 import { getSharedRpc, RpcError } from '@/utils/rpc'
 import '@/utils/echarts' // 共享 ECharts 配置
@@ -621,21 +621,11 @@ const baseTooltipConfig = computed(() => ({
   },
 }))
 
-const chartLeft = computed(() => showLoss.value ? 100 : 56)
-const lossHeatmap = computed(() => buildLossHeatmap(
-  remoteData.value,
-  selectedTasks.value.map(task => task.id),
-  selectedHours.value,
-  Math.max(24, Math.min(180, Math.floor(((chartWidth.value || 900) - chartLeft.value - 24) / 6))),
-))
+const chartLeft = 56
 const delayHeight = 210
-const lossRowHeight = 28
-const lossTop = computed(() => showDelay.value ? delayHeight + 84 : 40)
-const lossHeight = computed(() => Math.max(1, selectedTasks.value.length) * lossRowHeight)
-const chartHeight = computed(() => showLoss.value
-  ? lossTop.value + lossHeight.value + 46
-  : delayHeight + 90,
-)
+const chartHeight = delayHeight + 90
+const timeRange = computed(() => getPingTimeRange(remoteData.value, selectedHours.value))
+const lossEvents = computed(() => buildPacketLossEvents(remoteData.value, selectedTasks.value, selectedHours.value))
 
 function escapeTooltip(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll('\'', '&#39;')
@@ -644,7 +634,7 @@ function escapeTooltip(value: string): string {
 const pingChartOption = computed<EChartsOption>(() => {
   const taskList = selectedTasks.value
   const data = chartData.value
-  const heatmap = lossHeatmap.value
+  const range = timeRange.value
   const hours = selectedHours.value
   const grids: GridComponentOption[] = []
   const xAxes: XAxisComponentOption[] = []
@@ -655,8 +645,8 @@ const pingChartOption = computed<EChartsOption>(() => {
     xAxes.push({
       type: 'time',
       gridIndex: grids.length - 1,
-      min: heatmap.start,
-      max: heatmap.end,
+      min: range.start,
+      max: range.end,
       splitNumber: chartWidth.value < 500 ? 3 : 6,
       axisLabel: {
         show: showLabels,
@@ -673,8 +663,8 @@ const pingChartOption = computed<EChartsOption>(() => {
   }
 
   if (showDelay.value) {
-    grids.push({ top: 32, height: delayHeight, left: chartLeft.value, right: 24 })
-    addTimeAxis(!showLoss.value)
+    grids.push({ top: 32, height: delayHeight, left: chartLeft, right: 24 })
+    addTimeAxis(true)
     yAxes.push({
       type: 'value',
       gridIndex: 0,
@@ -700,68 +690,6 @@ const pingChartOption = computed<EChartsOption>(() => {
     }
   }
 
-  if (showLoss.value) {
-    const gridIndex = grids.length
-    grids.push({ top: lossTop.value, height: lossHeight.value, left: chartLeft.value, right: 24 })
-    addTimeAxis(true)
-    yAxes.push({
-      type: 'category',
-      gridIndex,
-      inverse: true,
-      data: taskList.map(task => task.name),
-      axisLabel: {
-        fontSize: 11,
-        color: chartThemeColors.value.textSecondary,
-        width: 86,
-        overflow: 'truncate',
-      },
-      axisTick: { show: false },
-      axisLine: { show: false },
-      splitLine: { show: false },
-      axisPointer: { show: false },
-    })
-    const renderItem: CustomSeriesRenderItem = (params, api) => {
-      const cell = heatmap.cells[params.dataIndex]
-      if (!cell)
-        return
-      const from = api.coord([cell.start, cell.row])
-      const to = api.coord([cell.end, cell.row])
-      const shape = graphic.clipRectByRect({
-        x: from[0]! + 0.5,
-        y: from[1]! - 11,
-        width: Math.max(1, to[0]! - from[0]! - 1),
-        height: 22,
-      }, params.coordSys as unknown as { x: number, y: number, width: number, height: number })
-      return shape ? { type: 'rect', shape, style: { fill: lossHeatmapColor(cell.maximum, isDark.value) }, emphasis: { style: { stroke: chartThemeColors.value.textSecondary, lineWidth: 1 } } } : undefined
-    }
-    series.push({
-      id: 'loss-heatmap',
-      name: '丢包率',
-      type: 'custom',
-      xAxisIndex: gridIndex,
-      yAxisIndex: gridIndex,
-      renderItem,
-      clip: true,
-      encode: { x: [0, 1], y: 2 },
-      data: heatmap.cells.map(cell => [cell.start, cell.end, cell.row, cell.maximum ?? -1]),
-      tooltip: {
-        trigger: 'item',
-        formatter: (params) => {
-          const item = params as { dataIndex: number }
-          const cell = heatmap.cells[item.dataIndex]
-          if (!cell)
-            return ''
-          const name = escapeTooltip(taskList[cell.row]?.name ?? '')
-          const time = `${formatTimeForTooltip(new Date(cell.start).toISOString(), hours)} – ${formatTimeForTooltip(new Date(cell.end).toISOString(), hours)}`
-          if (cell.maximum === null)
-            return `${name}<br>${time}<br>暂无数据`
-          const average = cell.samples > 1 ? `<br>平均丢包 ${cell.average!.toFixed(1)}% · ${cell.samples} 次采样` : ''
-          return `${name}<br>${time}<br>最高丢包 <b>${cell.maximum.toFixed(1)}%</b>${average}`
-        },
-      },
-    })
-  }
-
   return {
     animation: false,
     tooltip: {
@@ -782,16 +710,7 @@ const pingChartOption = computed<EChartsOption>(() => {
         return `${time}<br>${latencyItems.map(item => `${escapeTooltip(item.name)}：${item.latency === null ? '无有效延迟' : `${Math.round(item.latency)} ms`}`).join('<br>')}`
       },
     },
-    axisPointer: { link: [{ xAxisIndex: 'all' }] },
-    title: showLoss.value
-      ? {
-          text: '丢包率（每格最高值）',
-          left: chartLeft.value,
-          top: lossTop.value - 26,
-          textStyle: { fontSize: 12, fontWeight: 'normal', color: chartThemeColors.value.textSecondary },
-        }
-      : undefined,
-    legend: showDelay.value && !showLoss.value
+    legend: showDelay.value
       ? {
           type: 'scroll',
           selectedMode: false,
@@ -1010,21 +929,24 @@ onMounted(() => {
 
         <!-- 图表 -->
         <div
-          v-if="(showDelay || showLoss) && selectedTasks.length"
+          v-if="showDelay && selectedTasks.length"
           class="rounded-md p-3 transition-all"
           :class="pickSurfaceClass('bg-background/60 hover:bg-background', 'bg-background/50 hover:bg-background backdrop-blur-xl')"
         >
-          <div ref="chartContainer" :style="{ height: `${chartHeight}px` }" data-ping-detail-chart :data-loss-rows="showLoss ? selectedTasks.length : 0">
+          <div ref="chartContainer" :style="{ height: `${chartHeight}px` }" data-ping-detail-chart>
             <VChart :option="pingChartOption" :update-options="{ notMerge: true }" autoresize />
           </div>
-          <div v-if="showLoss" class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 pt-2 text-[11px] text-muted-foreground" aria-label="丢包率颜色图例">
-            <span v-for="level in LOSS_HEATMAP_LEVELS" :key="level.label" class="inline-flex items-center gap-1">
-              <span class="h-2.5 w-3 rounded-[1px]" :style="{ backgroundColor: level[isDark ? 'dark' : 'light'] }" />
-              {{ level.label }}
-            </span>
-          </div>
         </div>
-        <div v-else class="py-8 text-center text-sm text-muted-foreground">
+        <div
+          v-if="showLoss && selectedTasks.length" class="rounded-md p-3"
+          :class="pickSurfaceClass('bg-background/60', 'bg-background/50 backdrop-blur-xl')"
+        >
+          <PacketLossEvents
+            :key="`${uuid}-${selectedView}-${selectedTaskIds.join(',')}`"
+            :events="lossEvents.events" :has-samples="lossEvents.sampleCount > 0"
+          />
+        </div>
+        <div v-if="!selectedTasks.length || (!showDelay && !showLoss)" class="py-8 text-center text-sm text-muted-foreground">
           {{ selectedTasks.length ? '请选择延迟或丢包' : '请选择探测节点' }}
         </div>
       </template>
