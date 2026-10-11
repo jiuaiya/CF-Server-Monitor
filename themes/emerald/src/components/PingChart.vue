@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { EChartsOption, GridComponentOption, SeriesOption, XAxisComponentOption, YAxisComponentOption } from 'echarts'
+import type { PingChartTask } from '@/composables/usePingChartTasks'
 import { Icon } from '@iconify/vue'
 import { useElementSize } from '@vueuse/core'
 import dayjs from 'dayjs'
@@ -14,6 +15,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useBackgroundSurface } from '@/composables/useBackgroundSurface'
 import { getGuestMaxChartTimeRangeLabel, requiresLongHistoryLogin, showLongHistoryLoginPrompt } from '@/composables/useLongHistoryAuth'
+import { usePingChartTasks } from '@/composables/usePingChartTasks'
 import { useAppStore } from '@/stores/app'
 import { useNodesStore } from '@/stores/nodes'
 import { DEFAULT_CHART_TIME_RANGE, getAvailableChartTimeRanges } from '@/utils/chartTimeRange'
@@ -89,23 +91,6 @@ interface PingRecord {
   metric?: 'latency' | 'loss'
 }
 
-interface TaskInfo {
-  id: number
-  key?: string
-  name: string
-  interval?: number
-  loss?: number
-  p99?: number
-  p50?: number
-  p99_p50_ratio?: number
-  min?: number
-  max?: number
-  avg?: number
-  latest?: number
-  total?: number
-  type?: string
-}
-
 interface MetricPoint {
   time: string
   value: number | null
@@ -146,24 +131,24 @@ interface PingMetricStatsResponse {
 
 interface PingRecordsResponse {
   records: PingRecord[]
-  tasks?: TaskInfo[]
+  tasks?: PingChartTask[]
 }
 
 interface PingChartData {
   records: PingRecord[]
-  tasks: TaskInfo[]
+  tasks: PingChartTask[]
 }
 
 // 数据状态
 const remoteData = shallowRef<PingRecord[]>([])
-const tasks = shallowRef<TaskInfo[]>([])
+const historyTasks = shallowRef<PingChartTask[]>([])
+const { tasks, selectedTaskIds, selectedTasks } = usePingChartTasks(historyTasks, nodeInfo)
 const loading = ref(false)
 const error = ref<string | null>(null)
 let fetchRequestId = 0
 let metricRpcSupported: boolean | null = null
 
 // 任务选择
-const selectedTaskIds = ref<number[]>([])
 const cutPeak = ref(false)
 const showDelay = ref(true)
 const showLoss = ref(false)
@@ -311,11 +296,7 @@ async function fetchRecords() {
     records.sort((a, b) => dayjs(a.time).valueOf() - dayjs(b.time).valueOf())
 
     remoteData.value = records
-    tasks.value = result.tasks
-
-    if (tasks.value.length > 0 && selectedTaskIds.value.length === 0) {
-      selectedTaskIds.value = tasks.value.map(t => t.id)
-    }
+    historyTasks.value = result.tasks
   }
   catch (err) {
     if (requestId !== fetchRequestId)
@@ -323,7 +304,7 @@ async function fetchRecords() {
 
     error.value = err instanceof Error ? err.message : '获取数据失败'
     remoteData.value = []
-    tasks.value = []
+    historyTasks.value = []
   }
   finally {
     if (requestId === fetchRequestId) {
@@ -524,36 +505,19 @@ const latestValues = computed(() => {
   })
 })
 
-const selectedTasks = computed(() => {
-  return tasks.value.filter(t => selectedTaskIds.value.includes(t.id))
-})
-
-const PING_TASK_KEYS: Record<number, string> = {
-  1: 'ct',
-  2: 'cu',
-  3: 'cm',
-  4: 'bd',
-  5: 'node_1',
-  6: 'node_2',
-  7: 'node_3',
-  8: 'node_4',
-}
-
 function appendRealtimePing(node: NonNullable<typeof nodeInfo.value>): void {
   if (selectedView.value !== DEFAULT_CHART_TIME_RANGE.label || !node.time || !node.ping)
     return
 
   const time = node.time
-  const taskIds = tasks.value.map(task => task.id)
-  const records = taskIds.flatMap((taskId) => {
-    const key = tasks.value.find(task => task.id === taskId)?.key ?? PING_TASK_KEYS[taskId]
-    const ping = key ? node.ping?.[key] : undefined
+  const records = tasks.value.flatMap((task) => {
+    const ping = task.key ? node.ping?.[task.key] : undefined
     if (!ping)
       return []
 
     return [{
       client: node.uuid,
-      task_id: taskId,
+      task_id: task.id,
       time,
       value: ping.latest >= 0 && ping.loss < 100 ? ping.latest : -1,
       loss: ping.loss,
@@ -568,7 +532,7 @@ function appendRealtimePing(node: NonNullable<typeof nodeInfo.value>): void {
   const existing = remoteData.value.filter(record => !recordKeys.has(`${record.task_id}:${record.time}`))
   remoteData.value = [...existing, ...records]
     .sort((a, b) => dayjs(a.time).valueOf() - dayjs(b.time).valueOf())
-    .slice(-Math.max(1, tasks.value.length) * 500)
+    .slice(-Math.max(1, historyTasks.value.length, tasks.value.length) * 500)
 }
 
 // 切换任务选中状态
@@ -740,14 +704,13 @@ watch(selectedView, (label) => {
     return
   }
   lastCommittedView.value = label
-  selectedTaskIds.value = []
   fetchRecords()
 })
 
 watch(() => props.uuid, () => {
   remoteData.value = []
-  tasks.value = []
-  selectedTaskIds.value = []
+  historyTasks.value = []
+  selectedTaskIds.value = tasks.value.map(task => task.id)
   fetchRecords()
 })
 
@@ -801,7 +764,7 @@ onMounted(() => {
         {{ error }}
       </div>
       <div v-else-if="tasks.length === 0 && !loading" class="py-8">
-        <Empty description="暂无延迟数据" />
+        <Empty description="没有可显示的 Ping 节点，请检查后台节点设置" />
       </div>
 
       <template v-else>
@@ -812,6 +775,7 @@ onMounted(() => {
         >
           <div
             v-for="task in latestValues" :key="task.id"
+            :data-ping-detail-key="task.key"
             class="flex cursor-pointer select-none items-center gap-3 rounded-md p-2 transition-all bg-background/60 hover:bg-background hover:shadow-[0_0_0_1px] hover:shadow-emerald-600/10"
             :class="[
               !selectedTaskIds.includes(task.id) && 'opacity-30',
